@@ -1,0 +1,19 @@
+{
+  "name": "Chill Glow",
+  "renderer": "bars",
+  "bands": 48,
+  "response": 1.12,
+  "attack": 0.5,
+  "decay": 0.91,
+  "onset_boost": 0.06,
+  "position": "bottom",
+  "width": 0.66,
+  "height": 0.17,
+  "bar_width": 0.42,
+  "mirror": true,
+  "glow": true,
+  "glow_radius": 14,
+  "color": "#EAF4FF",
+  "roundness": 1.0,
+  "background": "transparent"
+}
