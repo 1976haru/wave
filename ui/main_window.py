@@ -65,10 +65,10 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.setWindowTitle("Music Wave Studio");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self._syncing=False
+        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
-        root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self.app_settings=AppSettings();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
+        root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
     def _left_panel(self):
         tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);m.addWidget(button);tabs.addTab(media,"Media")
         ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel("Reference Images (max 5)"));r.addWidget(self.ref_list);row=QHBoxLayout()
@@ -101,7 +101,8 @@ class MainWindow(QMainWindow):
     def _color_button(self,form,label,key):
         button=QPushButton();button.clicked.connect(lambda:self.pick_color(key));self.fields[key]=button;form.addRow(label,button)
     def _export_tab(self):
-        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","webm","mov"]);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["webm","mp4","mov"]);self.export_format.setCurrentText("webm");self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        self.output_location=QLabel(self.current_output_dir or "출력 폴더를 선택하세요");choose=QPushButton("폴더 변경");choose.clicked.connect(self.choose_output_dir);form.addRow("출력 위치",self.output_location);form.addRow("",choose)
         for label,control in (("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed)):form.addRow(label,control)
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
@@ -125,11 +126,20 @@ class MainWindow(QMainWindow):
         elif action.startswith("완료 후 PC") and QMessageBox.question(self,"PC 종료","60초 후 PC를 종료할까요?",QMessageBox.Yes|QMessageBox.No)==QMessageBox.Yes:subprocess.Popen(["shutdown","/s","/t","60"])
     def _step_navigator(self):
         widget=QWidget();layout=QHBoxLayout(widget);self.step_labels=[]
-        for key in ("step1","step2","step3","step4","step5"):
-            label=QLabel(self.translator.tr(key));label.setAlignment(Qt.AlignCenter);label.setMinimumHeight(38);label.setStyleSheet("background:#222B37;color:#B7C0CB;border:1px solid #394657;border-radius:5px;padding:5px")
-            layout.addWidget(label);self.step_labels.append(label)
-        self.step_labels[0].setStyleSheet("background:#4A90E2;color:#FFFFFF;border:1px solid #4A90E2;border-radius:5px;padding:5px")
-        return widget
+        for index,key in enumerate(("step1","step2","step3","step4","step5")):
+            button=QPushButton(self.translator.tr(key));button.setCheckable(True);button.setMinimumHeight(42);button.clicked.connect(lambda _checked=False,i=index:self.navigate_step(i));layout.addWidget(button);self.step_labels.append(button)
+        self._set_step_visual(0);return widget
+    def _set_step_visual(self,index):
+        self.current_step=index
+        for position,button in enumerate(self.step_labels):
+            button.setChecked(position==index);button.setProperty("completed",position<index);button.style().unpolish(button);button.style().polish(button)
+    def navigate_step(self,index):
+        index=max(0,min(4,int(index)));self._set_step_visual(index)
+        if index==0:self.left_tabs.setCurrentIndex(0)
+        elif index==1:self.left_tabs.setCurrentIndex(2)
+        elif index==2:self.left_tabs.setCurrentIndex(0)
+        elif index==3:self.tabs.setCurrentIndex(4)
+        else:self.left_tabs.setCurrentIndex(4)
     def _localize_existing(self):
         pairs={"Media":"음원","Audio Files":"음원","Audio":"음악 반응","Reference":"참고 파형","Design":"디자인","Queue":"예약 작업","Playlist":"곡 목록","Templates":"파형 스타일","Effects":"효과","Export":"저장 설정","Add Audio":"음원 추가","Add Image":"이미지 추가","Remove":"삭제","Clear":"전체 지우기","Auto Analyze Images":"참고 이미지 분석","Draw ROI":"ROI 선택","Coordinate ROI":"ROI 좌표 입력","Reset ROI":"ROI 초기화","Analyze Motion":"움직임 분석","Save as My Template":"내 스타일로 저장","Play":"재생","Pause":"일시정지","Stop":"정지","Format":"출력 형식","Resolution":"해상도","FPS":"프레임 속도","Renderer":"렌더 방식","Quality":"품질","Ready":"준비됨"}
         mapping=pairs if self.translator.language=="ko" else {value:key for key,value in pairs.items()}
@@ -157,14 +167,13 @@ class MainWindow(QMainWindow):
         self.template["bass_weight"]={"약하게":.6,"기본":1.0,"강하게":1.5}.get(values.get("bass"),1.0);self.template["high_weight"]={"약하게":.6,"기본":1.0,"강하게":1.5}.get(values.get("treble"),1.0)
         self.sync_controls();self.debounce.start()
     def add_to_queue(self):
-        if not self.audio_files:return
-        out=QFileDialog.getExistingDirectory(self,"출력 폴더 선택","output")
-        if not out:return
-        export={"format":self.export_format.currentText(),"resolution":self.resolution.currentText(),"fps":int(self.export_fps.currentText()),"quality":self.quality.currentText(),"renderer":self.renderer_choice.currentText(),"ffmpeg_path":self.ffmpeg_path.text() or None}
-        name=f"{datetime.date.today().isoformat()}_{self.template.get('name','파형 스타일')}"
-        job=JobSet(name=name,tracks=[{"audio":path,"preset":self.template.get("name","01_clean_bars"),"format":export["format"]} for path in self.audio_files],preset=self.template.get("name","01_clean_bars"),export=export,output_dir=out)
-        try:self.queue_manager.add(job);self.queue_panel.refresh();self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5")
-        except ValueError as exc:QMessageBox.warning(self,"예약 작업",str(exc))
+        if not self.audio_files:return False
+        out=self.ensure_output_dir()
+        if not out:return False
+        snapshot=self.build_current_job_snapshot();name=f"{datetime.date.today().isoformat()}_{snapshot['template'].get('name','Waveform')}"
+        job=JobSet(name=name,tracks=[{"audio":path,"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format} for path in snapshot["audio_files"]],preset=snapshot["template"].get("name","01_clean_bars"),export={"format":snapshot["options"].format,"resolution":self.resolution.currentText(),"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"ffmpeg_path":snapshot["options"].ffmpeg_path},output_dir=out)
+        try:self.queue_manager.add(job);self.queue_panel.refresh();self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5");return True
+        except ValueError as exc:QMessageBox.warning(self,"예약 작업",str(exc));return False
     def start_queue(self):
         if not self.queue_manager.sets:return
         checks=self.queue_manager.preflight(check_template=resolve_template);bad=[item for item in checks if not item["ready"]]
@@ -175,7 +184,7 @@ class MainWindow(QMainWindow):
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#11151C;color:#F4F7FA;font-size:13px}QGroupBox{border:1px solid #394657;border-radius:5px;margin-top:8px;padding-top:10px}QGroupBox::title{color:#F4F7FA}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox,QLineEdit{background:#222B37;color:#F4F7FA;border:1px solid #394657;padding:7px;border-radius:4px;min-height:24px}QPushButton:hover,QComboBox:hover{background:#2E4663;border-color:#4A90E2}QPushButton:pressed,QPushButton:checked{background:#4A90E2;color:white}QTabWidget::pane{background:#181E27;border:1px solid #394657}QTabBar::tab{background:#181E27;color:#B7C0CB;padding:10px 14px;min-height:20px}QTabBar::tab:selected{background:#4A90E2;color:#FFFFFF}QTabBar::tab:hover{background:#2E4663;color:#FFFFFF}QListWidget,QTableWidget{background:#181E27;color:#F4F7FA;border:1px solid #394657}QHeaderView::section{background:#222B37;color:#F4F7FA;padding:6px}QSlider::groove:horizontal{background:#394657;height:6px}QSlider::handle:horizontal{background:#4A90E2;width:14px;margin:-5px 0}QProgressBar{background:#222B37;color:#F4F7FA;border:1px solid #394657;text-align:center;min-height:20px}QProgressBar::chunk{background:#4A90E2}QToolTip{background:#222B37;color:#F4F7FA;border:1px solid #4A90E2}")
     def add_audio(self):
         files,_=QFileDialog.getOpenFileNames(self,"Audio files","","Audio (*.wav *.mp3 *.flac *.m4a *.ogg)");self.audio_files.extend(x for x in files if x not in self.audio_files);self.audio_list.clear();self.audio_list.addItems(self.audio_files)
-        if self.audio_files:self.player.setSource(QUrl.fromLocalFile(self.audio_files[0]))
+        if self.audio_files:self.player.setSource(QUrl.fromLocalFile(self.audio_files[0]));self.navigate_step(1);self.analyze_audio()
     def add_reference(self):
         files,_=QFileDialog.getOpenFileNames(self,"Reference images","","Images (*.png *.jpg *.jpeg *.webp)");
         for path in files:
@@ -213,7 +222,7 @@ class MainWindow(QMainWindow):
         values=np.abs(np.sin(np.linspace(0,np.pi*3,36)))*.8+.1
         for path,data in list_templates(resource_path("templates"),"my_templates"):
             item=QListWidgetItem(data["name"]);item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
-    def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start()
+    def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start();self.navigate_step(2)
     def save_my_template(self):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
         if ok and name.strip():self.template["name"]=name.strip();safe="".join(c if c.isalnum() or c in "-_" else "_" for c in name.strip());save_template(Path("my_templates")/(safe+".json"),self.template);self.refresh_templates();self.status.setText("Saved to My Templates")
@@ -245,7 +254,7 @@ class MainWindow(QMainWindow):
         self.thread=QThread();self.worker=TaskWorker(kind,payload);self.worker.moveToThread(self.thread);self.thread.started.connect(self.worker.run);self.worker.status.connect(self.status.setText);self.worker.progress.connect(lambda a,b:self.total_progress.setValue(int(a*100/b)));self.worker.failed.connect(self.task_failed);self.worker.done.connect(lambda result:self.task_done(kind,result));self.worker.done.connect(self.thread.quit);self.worker.failed.connect(self.thread.quit);self.thread.start();self.status.setText(f"{kind.title()} running…")
     def task_done(self,kind,result):
         if kind=="analysis":
-            features,hit,elapsed=result;self.preview_engine.features=features;self.preview_engine.template=dict(self.template);self.preview_engine.metrics.cache_hit=hit;self.preview_engine.metrics.analysis_seconds=elapsed;self.timeline.setMaximum(int(float(features["duration"][0])*1000));self.start_preview_worker(features);self.render_preview()
+            features,hit,elapsed=result;self.preview_engine.features=features;self.navigate_step(2);self.preview_engine.template=dict(self.template);self.preview_engine.metrics.cache_hit=hit;self.preview_engine.metrics.analysis_seconds=elapsed;self.timeline.setMaximum(int(float(features["duration"][0])*1000));self.start_preview_worker(features);self.render_preview()
         elif kind in ("images","video"):self.apply_reference(result)
         elif kind=="validation":self.status.setText(f"Validation: {result['successful_tracks']}/{result['total_tracks']} ready; report saved");return
         elif kind=="playlist":self.status.setText(f"Playlist complete: {result['success']} success, {result['failed']} failed");return
@@ -279,15 +288,36 @@ class MainWindow(QMainWindow):
     def _media_position(self,value):self.timeline.setValue(value);self.time_label.setText(f"{format_time(value/1000)} / {format_time(self.player.duration()/1000)}")
     def _media_duration(self,value):self.timeline.setMaximum(value)
     def _format_help(self,value):self.format_help.setText({"mp4":"MP4 H.264 · black background · CapCut Screen blend","webm":"WebM VP9 · transparent alpha","mov":"MOV ProRes 4444 · transparent alpha"}[value])
+    def set_output_dir(self,path):
+        self.current_output_dir=str(Path(path).resolve()) if path else ""
+        if self.current_output_dir:
+            self.app_settings.set("last_output_folder",self.current_output_dir)
+            if hasattr(self,"output_location"):self.output_location.setText(self.current_output_dir)
+    def choose_output_dir(self):
+        selected=QFileDialog.getExistingDirectory(self,"출력 폴더 선택",self.current_output_dir or "output")
+        if selected:self.set_output_dir(selected)
+        return bool(selected)
+    def ensure_output_dir(self):
+        path=self.current_output_dir
+        if path and Path(path).is_dir():return path
+        return self.current_output_dir if self.choose_output_dir() else ""
+    def build_current_job_snapshot(self):
+        output=self.current_output_dir
+        if self.resolution.currentText()=="Custom":width,height=self.custom_width.value(),self.custom_height.value()
+        else:width,height=map(int,self.resolution.currentText().split("x"))
+        options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),self.export_format.currentText(),self.ffmpeg_path.text() or None)
+        return {"audio_files":list(self.audio_files),"template":copy.deepcopy(self.template),"options":options,"output_dir":output,"skip_completed":self.skip_completed.isChecked()}
     def render(self):
-        if not self.audio_files:return
-        out=QFileDialog.getExistingDirectory(self,"Output directory","output")
-        if not out:return
-        if self.resolution.currentText()=="Custom":w,h=self.custom_width.value(),self.custom_height.value()
-        else:w,h=map(int,self.resolution.currentText().split("x"))
-        space=disk_warning(out);
-        if space["warning"] and QMessageBox.warning(self,"Low Disk Space",f"Only {space['free']/1024**3:.1f} GB is available. Continue?",QMessageBox.Yes|QMessageBox.No)!=QMessageBox.Yes:return
-        options=ExportOptions(w,h,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),self.export_format.currentText(),self.ffmpeg_path.text() or None);self.start_task("render",(self.audio_files,out,copy.deepcopy(self.template),options,self.skip_completed.isChecked()))
+        return self.render_now()
+    def render_now(self):
+        if not self.audio_files:
+            self.navigate_step(0);return False
+        out=self.ensure_output_dir()
+        if not out:
+            self.navigate_step(3);return False
+        self.set_output_dir(out);space=disk_warning(out)
+        if space["warning"] and QMessageBox.warning(self,"Low Disk Space",f"Only {space['free']/1024**3:.1f} GB is available. Continue?",QMessageBox.Yes|QMessageBox.No)!=QMessageBox.Yes:return False
+        snapshot=self.build_current_job_snapshot();self.last_job_snapshot=snapshot;self.start_task("render",(snapshot["audio_files"],snapshot["output_dir"],snapshot["template"],snapshot["options"],snapshot["skip_completed"]));self.navigate_step(4);return True
     def render_playlist(self):
         project=self.playlist_panel.project
         if not project.tracks:return
@@ -305,7 +335,7 @@ class MainWindow(QMainWindow):
         self.quality.setCurrentText(str(self.app_settings.get('quality','BALANCED')))
         self.resolution.setCurrentText(str(self.app_settings.get('resolution','1920x1080')))
         self.export_fps.setCurrentText(str(self.app_settings.get('fps','30')))
-        self.ffmpeg_path.setText(str(self.app_settings.get("ffmpeg_path","") or ""));self.app_settings.restore_window(self)
+        self.ffmpeg_path.setText(str(self.app_settings.get("ffmpeg_path","") or ""));self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.app_settings.restore_window(self)
     def closeEvent(self,event):
         self.app_settings.set("renderer_mode",self.renderer_choice.currentText());self.app_settings.set("quality",self.quality.currentText());self.app_settings.set("resolution",self.resolution.currentText());self.app_settings.set("fps",self.export_fps.currentText());self.app_settings.set("ffmpeg_path",self.ffmpeg_path.text());self.app_settings.save_window(self);self.stop_preview_worker();super().closeEvent(event)
     def system_check(self):
