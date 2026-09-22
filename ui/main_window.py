@@ -33,7 +33,7 @@ from tools.system_check import check_system,format_report
 from tools.validate_audio import validate as validate_audio_folder
 
 class TaskWorker(QObject):
-    done=Signal(object);failed=Signal(str);status=Signal(str);progress=Signal(int,int)
+    done=Signal(object);failed=Signal(str);status=Signal(str);progress=Signal(int,int);detail=Signal(object)
     def __init__(self,kind,payload):super().__init__();self.kind=kind;self.payload=payload;self.runner=None
     @Slot()
     def run(self):
@@ -41,16 +41,16 @@ class TaskWorker(QObject):
             if self.kind=="analysis":
                 started=time.perf_counter(); features,hit=analyze_file(self.payload[0],self.payload[1] if isinstance(self.payload[1],AnalysisSettings) else AnalysisSettings(fps=24,bands=self.payload[1]),logger=self.status.emit); result=(features,hit,time.perf_counter()-started)
             elif self.kind=="render":
-                files,out,template,options,skip_completed=self.payload;self.runner=BatchRunner();result=self.runner.run(files,out,template,options,skip_completed=skip_completed,progress=lambda a,b,e:(self.progress.emit(a,b),self.status.emit(f"ETA {e:.0f}s")))
+                files,out,template,options,skip_completed=self.payload;self.runner=BatchRunner();result=self.runner.run(files,out,template,options,skip_completed=skip_completed,progress=lambda a,b,e:(self.progress.emit(a,b),self.status.emit(f"ETA {e:.0f}s")),progress_detail=self.detail.emit)
             elif self.kind=="images":result=analyze_images(*self.payload)
             elif self.kind=="video":result=analyze_video(*self.payload)
             elif self.kind=="validation":result=validate_audio_folder(*self.payload)
             elif self.kind=="playlist":result=run_job(self.payload)
             elif self.kind=="queue":
                 manager,sleep_enabled=self.payload
-                def render_track(track,job):
-                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(source.stem+output_extension(fmt)); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path"}}); return render_audio(source,target,template,options)
-                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),sleep_guard=SleepPrevention(sleep_enabled))
+                def render_track(track,job,progress_detail=None):
+                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(source.stem+output_extension(fmt)); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path"}}); return render_audio(source,target,template,options,progress_detail=progress_detail)
+                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled))
             self.done.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
     def validate_tracks(self):
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
     def _left_panel(self):
-        tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);m.addWidget(button);tabs.addTab(media,"Media")
+        tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);row_audio=QHBoxLayout();button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);folder_button=QPushButton("+ ?? ?? ??");folder_button.clicked.connect(self.add_folder);row_audio.addWidget(folder_button);row_audio.addWidget(button);m.addLayout(row_audio);tabs.addTab(media,"Media")
         ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel("Reference Images (max 5)"));r.addWidget(self.ref_list);row=QHBoxLayout()
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
@@ -182,9 +182,25 @@ class MainWindow(QMainWindow):
             return
         self.start_task("queue",(self.queue_manager,self.prevent_sleep.isChecked()));self.status.setText("예약 작업을 시작했습니다")
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#11151C;color:#F4F7FA;font-size:13px}QGroupBox{border:1px solid #394657;border-radius:5px;margin-top:8px;padding-top:10px}QGroupBox::title{color:#F4F7FA}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox,QLineEdit{background:#222B37;color:#F4F7FA;border:1px solid #394657;padding:7px;border-radius:4px;min-height:24px}QPushButton:hover,QComboBox:hover{background:#2E4663;border-color:#4A90E2}QPushButton:pressed,QPushButton:checked{background:#4A90E2;color:white}QTabWidget::pane{background:#181E27;border:1px solid #394657}QTabBar::tab{background:#181E27;color:#B7C0CB;padding:10px 14px;min-height:20px}QTabBar::tab:selected{background:#4A90E2;color:#FFFFFF}QTabBar::tab:hover{background:#2E4663;color:#FFFFFF}QListWidget,QTableWidget{background:#181E27;color:#F4F7FA;border:1px solid #394657}QHeaderView::section{background:#222B37;color:#F4F7FA;padding:6px}QSlider::groove:horizontal{background:#394657;height:6px}QSlider::handle:horizontal{background:#4A90E2;width:14px;margin:-5px 0}QProgressBar{background:#222B37;color:#F4F7FA;border:1px solid #394657;text-align:center;min-height:20px}QProgressBar::chunk{background:#4A90E2}QToolTip{background:#222B37;color:#F4F7FA;border:1px solid #4A90E2}")
+    def _default_wave_dir(self):
+        if not self.audio_files:return ""
+        return str(Path(self.audio_files[0]).resolve().parent / "wave")
+    def add_folder(self):
+        folder=QFileDialog.getExistingDirectory(self,"?? ?? ??")
+        if not folder:return False
+        extensions={".wav",".mp3",".flac",".m4a",".aac",".ogg",".opus"}
+        files=sorted((str(path) for path in Path(folder).iterdir() if path.is_file() and path.suffix.lower() in extensions),key=lambda value:Path(value).name.casefold())
+        if not files:return False
+        self.audio_files=files;self.audio_list.clear();self.audio_list.addItems([Path(path).name for path in files]);self.set_output_dir(str(Path(folder)/"wave"));self.navigate_step(1);self.analyze_audio();return True
+    def render_detail(self,event):
+        percent=float(event.get("percent",0));self.song_progress.setValue(int(percent))
+        track=event.get("track_index",1);track_total=event.get("track_total",len(self.audio_files) or 1);set_index=event.get("set_index",1);set_total=event.get("set_total",1);overall=((set_index-1)+(track-1+percent/100.0)/max(track_total,1))/max(set_total,1)*100.0;self.total_progress.setValue(int(max(0,min(100,overall))))
+        name=Path(self.audio_files[track-1]).name if self.audio_files and 0<track<=len(self.audio_files) else ""
+        fps=float(event.get("fps",0));self.status.setText(f"?? {set_index} / {set_total} | ? {track} / {track_total} | {name} | ?? ? {percent:.0f}% | GPU/CPU ?? ? | {fps:.1f} fps")
     def add_audio(self):
         files,_=QFileDialog.getOpenFileNames(self,"Audio files","","Audio (*.wav *.mp3 *.flac *.m4a *.ogg)");self.audio_files.extend(x for x in files if x not in self.audio_files);self.audio_list.clear();self.audio_list.addItems(self.audio_files)
-        if self.audio_files:self.player.setSource(QUrl.fromLocalFile(self.audio_files[0]));self.navigate_step(1);self.analyze_audio()
+        if self.audio_files:
+            self.player.setSource(QUrl.fromLocalFile(self.audio_files[0]));self.set_output_dir(str(Path(self.audio_files[0]).resolve().parent / "wave"));self.navigate_step(1);self.analyze_audio()
     def add_reference(self):
         files,_=QFileDialog.getOpenFileNames(self,"Reference images","","Images (*.png *.jpg *.jpeg *.webp)");
         for path in files:
@@ -251,7 +267,7 @@ class MainWindow(QMainWindow):
         if self.audio_files:self.start_task("analysis",(self.audio_files[0],AnalysisSettings(fps=24,bands=int(self.template["bands"]),fft_window=self.fft_window.currentText(),spectrum_mapping=self.spectrum_mapping.currentText())))
     def start_task(self,kind,payload):
         if self.thread and self.thread.isRunning():return
-        self.thread=QThread();self.worker=TaskWorker(kind,payload);self.worker.moveToThread(self.thread);self.thread.started.connect(self.worker.run);self.worker.status.connect(self.status.setText);self.worker.progress.connect(lambda a,b:self.total_progress.setValue(int(a*100/b)));self.worker.failed.connect(self.task_failed);self.worker.done.connect(lambda result:self.task_done(kind,result));self.worker.done.connect(self.thread.quit);self.worker.failed.connect(self.thread.quit);self.thread.start();self.status.setText(f"{kind.title()} running…")
+        self.thread=QThread();self.worker=TaskWorker(kind,payload);self.worker.moveToThread(self.thread);self.thread.started.connect(self.worker.run);self.worker.status.connect(self.status.setText);self.worker.progress.connect(lambda a,b:self.total_progress.setValue(int(a*100/b)));self.worker.detail.connect(self.render_detail);self.worker.failed.connect(self.task_failed);self.worker.done.connect(lambda result:self.task_done(kind,result));self.worker.done.connect(self.thread.quit);self.worker.failed.connect(self.thread.quit);self.thread.start();self.status.setText(f"{kind.title()} running…")
     def task_done(self,kind,result):
         if kind=="analysis":
             features,hit,elapsed=result;self.preview_engine.features=features;self.navigate_step(2);self.preview_engine.template=dict(self.template);self.preview_engine.metrics.cache_hit=hit;self.preview_engine.metrics.analysis_seconds=elapsed;self.timeline.setMaximum(int(float(features["duration"][0])*1000));self.start_preview_worker(features);self.render_preview()
@@ -300,6 +316,9 @@ class MainWindow(QMainWindow):
     def ensure_output_dir(self):
         path=self.current_output_dir
         if path and Path(path).is_dir():return path
+        automatic=self._default_wave_dir()
+        if automatic:
+            Path(automatic).mkdir(parents=True,exist_ok=True);self.set_output_dir(automatic);return automatic
         return self.current_output_dir if self.choose_output_dir() else ""
     def build_current_job_snapshot(self):
         output=self.current_output_dir

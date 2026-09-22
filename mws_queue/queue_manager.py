@@ -85,7 +85,7 @@ class QueueManager:
             results.append({"id":item.id,"name":item.name,"ready":not errors,"errors":errors})
         return results
     def request_cancel(self):self.cancel_requested=True
-    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None):
+    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None):
         started=time.perf_counter();self.running=True;self.cancel_requested=False;errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
         if sleep_guard:sleep_guard.__enter__()
         try:
@@ -97,7 +97,9 @@ class QueueManager:
                     if self.cancel_requested:break
                     if track.get("status")=="completed" and skip_completed:tracks_success+=1;item.completed+=1;continue
                     try:
-                        result=render_track(copy.deepcopy(track),item.snapshot());track.update(result or {},status="completed",error="");item.completed+=1;tracks_success+=1
+                        track_kwargs={}
+                        if progress_detail: track_kwargs["progress_detail"]=lambda event, si=set_index+1, ti=track_index+1, item_total=len(item.tracks): progress_detail({**event,"set_index":si,"track_index":ti,"set_total":len(self.sets),"track_total":item_total})
+                        result=render_track(copy.deepcopy(track),item.snapshot(),**track_kwargs);track.update(result or {},status="completed",error="");item.completed+=1;tracks_success+=1
                     except Exception as exc:
                         message=f"{item.name}: {track.get('audio',track.get('source_path',''))}: {exc}";track.update(status="failed",error=str(exc));item.failed+=1;tracks_failed+=1;errors.append(message)
                     self.save()

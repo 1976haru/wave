@@ -7,17 +7,19 @@ from ui.main_window import MainWindow
 @pytest.fixture
 def window(tmp_path):
     app=QApplication.instance() or QApplication([])
-    w=MainWindow();w.queue_manager.state_path=tmp_path/"queue.json";w.queue_manager.sets=[];w.app_settings.set("first_run_done",True);w.current_output_dir="";yield w;w.close()
-def test_render_now_calls_folder_picker_once(window,monkeypatch,tmp_path):
+    w=MainWindow();w.queue_manager.state_path=tmp_path/"queue.json";w.queue_manager.sets=[];w.app_settings.set("first_run_done",True);w.app_settings.set("last_output_folder","");w.current_output_dir="";yield w;w.close()
+def test_render_now_uses_automatic_wave_folder(window,monkeypatch,tmp_path):
     audio=tmp_path/"song.wav";audio.write_bytes(b"x");window.audio_files=[str(audio)];calls=[];monkeypatch.setattr(QFileDialog,"getExistingDirectory",staticmethod(lambda *args:(calls.append(1) or str(tmp_path))));started=[];monkeypatch.setattr(window,"start_task",lambda kind,payload:started.append((kind,payload)))
     assert window.render() is True
-    assert len(calls)==1 and window.current_output_dir==str(tmp_path.resolve()) and started and started[0][0]=="render"
+    assert len(calls)==0 and window.current_output_dir==str((tmp_path/"wave").resolve()) and started and started[0][0]=="render"
+
 def test_render_now_reuses_saved_folder(window,monkeypatch,tmp_path):
     audio=tmp_path/"song.wav";audio.write_bytes(b"x");window.audio_files=[str(audio)];window.set_output_dir(tmp_path);calls=[];monkeypatch.setattr(QFileDialog,"getExistingDirectory",staticmethod(lambda *args:(calls.append(1) or str(tmp_path))));monkeypatch.setattr(window,"start_task",lambda *args:None)
     assert window.render() is True and len(calls)==0
-def test_render_cancel_does_not_start(window,monkeypatch,tmp_path):
-    audio=tmp_path/"song.wav";audio.write_bytes(b"x");window.audio_files=[str(audio)];calls=[];monkeypatch.setattr(QFileDialog,"getExistingDirectory",staticmethod(lambda *args:(calls.append(1) or "")));started=[];monkeypatch.setattr(window,"start_task",lambda *args:started.append(args))
-    assert window.render() is False and len(calls)==1 and not started
+def test_render_without_audio_does_not_start(window,monkeypatch):
+    calls=[];monkeypatch.setattr(QFileDialog,"getExistingDirectory",staticmethod(lambda *args:(calls.append(1) or "")));started=[];monkeypatch.setattr(window,"start_task",lambda *args:started.append(args))
+    assert window.render() is False and len(calls)==0 and not started
+
 def test_job_snapshot_contains_frozen_template_and_output(window,tmp_path):
     window.audio_files=["song.wav"];window.template["name"]="Tokyo Night";window.set_output_dir(tmp_path);snapshot=window.build_current_job_snapshot();window.template["name"]="Changed"
     assert snapshot["output_dir"]==str(tmp_path.resolve()) and snapshot["template"]["name"]=="Tokyo Night" and snapshot["audio_files"]==["song.wav"]
