@@ -1,4 +1,4 @@
-# Music Wave Studio v0.6
+# Music Wave Studio v0.7
 
 Production-oriented audio-reactive waveform designer with cached analysis, responsive live preview, reference-assisted design, CPU/GPU RGBA rendering, resumable batch export, reusable templates, and Windows distribution support.
 
@@ -68,3 +68,29 @@ The application is created at `dist\MusicWaveStudio\MusicWaveStudio.exe`. Templa
 `tools/create_capcut_test.py` creates MP4 Screen-blend, VP9-alpha WebM, ProRes 4444 MOV, and `CAPCUT_TEST_CHECKLIST.txt`. Generation does not mean CapCut compatibility has passed; a user must complete the checklist in the actual CapCut version.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
+
+## Audio Analysis v2
+
+The STANDARD analyzer uses NumPy plus SciPy when available. FFT windowing supports Hann (default), Hamming, and Blackman. Spectrum mapping supports LOG and dependency-free PERCEPTUAL (mel-like) bands. Seven internal bands (sub, bass, low-mid, mid, upper-mid, high, air) feed the simple Bass/Mid/High controls. Analysis occurs once and is cached as numeric NPZ plus versioned JSON metadata; render frames never run FFT or SciPy filters.
+
+Librosa is experimental and is not bundled in the Standard executable. Install it only when needed:
+
+```powershell
+python -m pip install -r requirements-advanced.txt
+python tools/compare_analyzers.py "D:\music\song.wav"
+```
+
+## Playlist and automation
+
+The Playlist tab supports files/folders, ordering, per-track preset/format data, save/load as `.mwsplaylist.json`, and retry state. Headless rendering uses the same cache and renderer pipeline:
+
+```powershell
+python app.py --headless --job job.json
+python app.py --headless --audio "D:\music\song.wav" --preset "Tokyo Night" --output "D:\output" --format webm
+```
+
+See [PLAYLIST_STUDIO_HUB_INTEGRATION.md](PLAYLIST_STUDIO_HUB_INTEGRATION.md) for the stable job/result contract. Run the consolidated release check with `python tools/final_validation.py --exports`.
+
+## FFmpeg resolution
+
+Runtime lookup order is a user-selected FFmpeg path, an executable-adjacent bundled path (reserved for future packages), then system `PATH`. The Standard v0.7 build does not bundle FFmpeg. Python 3.12 64-bit is the official build target; 3.13 is supported when all wheels are available, while 3.14 is CPU-fallback only and not recommended.

@@ -15,7 +15,7 @@ def check_system():
     checks={};version=sys.version_info;recommended=(3,12)<=version[:2]<=(3,13);checks["python"]=_item("PASS" if recommended else "WARNING",f"{platform.python_version()} (recommended 3.12 or 3.13)")
     for command in ("ffmpeg","ffprobe"):
         path=shutil.which(command);checks[command]=_item("PASS" if path else "FAIL",path or "not found on PATH")
-    for module,label,required in (("PySide6","PySide6",True),("numpy","NumPy",True),("cv2","OpenCV",True),("av","PyAV",False),("moderngl","ModernGL",False)):
+    for module,label,required in (("PySide6","PySide6",True),("numpy","NumPy",True),("scipy","SciPy",True),("cv2","OpenCV",True),("av","PyAV",False),("moderngl","ModernGL",False),("librosa","librosa optional",False)):
         found=importlib.util.find_spec(module) is not None;checks[label]=_item("PASS" if found else ("FAIL" if required else "WARNING"),"installed" if found else "not installed")
     checks["gpu_context"]=_item("WARNING","not tested")
     if importlib.util.find_spec("moderngl"):

@@ -2,8 +2,8 @@
 setlocal
 cd /d "%~dp0"
 set "PY_CMD="
-py -3.13 -c "import sys" >nul 2>&1 && set "PY_CMD=py -3.13"
-if not defined PY_CMD py -3.12 -c "import sys" >nul 2>&1 && set "PY_CMD=py -3.12"
+py -3.12 -c "import sys" >nul 2>&1 && set "PY_CMD=py -3.12"
+if not defined PY_CMD py -3.13 -c "import sys" >nul 2>&1 && set "PY_CMD=py -3.13"
 if not defined PY_CMD (
   echo WARNING: Python 3.12 or 3.13 is recommended for GPU and PyAV support.
   set "PY_CMD=py -3"

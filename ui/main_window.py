@@ -5,18 +5,23 @@ import numpy as np
 from PySide6.QtCore import QObject,QMetaObject,QThread,QTimer,QUrl,Signal,Slot,Qt
 from PySide6.QtGui import QColor,QIcon,QImage,QPixmap
 from PySide6.QtMultimedia import QAudioOutput,QMediaPlayer
-from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
+from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
 from audio.analyzer import AnalysisSettings,analyze_file
 from core.paths import resource_path
+from core.settings import AppSettings
+from core.storage import disk_warning
+from ui.playlist_panel import PlaylistPanel
 from animation.engine import AnimationEngine
 from pipeline.batch import BatchRunner
 from pipeline.exporter import ExportOptions,output_extension
+from render_job import run_job
 from preview.engine import PreviewEngine,format_time
 from preview.scheduler import FrameScheduler
 from preview.worker import LatestFrameMailbox,PreviewRenderWorker
 from reference.analyzer import analyze_images,analyze_video
 from render.renderer import CPURenderer,RendererFactory
 from template_system import list_templates,load_template,save_template
+from template_system.thumbnails import get_thumbnail
 from ui.roi_widget import ROIDialog
 from tools.system_check import check_system,format_report
 from tools.validate_audio import validate as validate_audio_folder
@@ -28,12 +33,13 @@ class TaskWorker(QObject):
     def run(self):
         try:
             if self.kind=="analysis":
-                started=time.perf_counter(); features,hit=analyze_file(self.payload[0],AnalysisSettings(fps=24,bands=self.payload[1]),logger=self.status.emit); result=(features,hit,time.perf_counter()-started)
+                started=time.perf_counter(); features,hit=analyze_file(self.payload[0],self.payload[1] if isinstance(self.payload[1],AnalysisSettings) else AnalysisSettings(fps=24,bands=self.payload[1]),logger=self.status.emit); result=(features,hit,time.perf_counter()-started)
             elif self.kind=="render":
                 files,out,template,options,skip_completed=self.payload;self.runner=BatchRunner();result=self.runner.run(files,out,template,options,skip_completed=skip_completed,progress=lambda a,b,e:(self.progress.emit(a,b),self.status.emit(f"ETA {e:.0f}s")))
             elif self.kind=="images":result=analyze_images(*self.payload)
             elif self.kind=="video":result=analyze_video(*self.payload)
             elif self.kind=="validation":result=validate_audio_folder(*self.payload)
+            elif self.kind=="playlist":result=run_job(self.payload)
             self.done.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
     def validate_tracks(self):
@@ -48,17 +54,17 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.setWindowTitle("Music Wave Studio v0.6");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self._syncing=False
+        super().__init__();self.setWindowTitle("Music Wave Studio v0.7");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
-        root=QWidget();layout=QVBoxLayout(root);body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls()
+        root=QWidget();layout=QVBoxLayout(root);body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self.app_settings=AppSettings();self._restore_settings()
     def _left_panel(self):
         tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);m.addWidget(button);tabs.addTab(media,"Media")
         ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel("Reference Images (max 5)"));r.addWidget(self.ref_list);row=QHBoxLayout()
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         r.addLayout(row);b=QPushButton("Auto Analyze Images");b.clicked.connect(self.analyze_reference_images);r.addWidget(b);roirow=QHBoxLayout();b=QPushButton("Draw ROI");b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton("Coordinate ROI");b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton("Reset ROI");b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel("No reference video");r.addWidget(self.video_label);b=QPushButton("Select 5–10s Video");b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton("Analyze Motion");b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
-        templates=QWidget();t=QVBoxLayout(templates);self.template_list=QListWidget();self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"Templates");return tabs
+        templates=QWidget();t=QVBoxLayout(templates);self.template_list=QListWidget();self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"Templates");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"Playlist");self.left_tabs=tabs;return tabs
     def _center_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
         for text,fn in (("▶ Play",self.play),("Ⅱ Pause",self.pause),("■ Stop",self.stop)):
@@ -68,7 +74,7 @@ class MainWindow(QMainWindow):
         self.tabs=QTabWidget();self.fields={};self.combos={};self.checks={};
         audio=("Bands",8,256,1),("Response",.1,3,.01),("Attack",0,1,.01),("Decay",0,1,.01),("Smoothing",0,.95,.01),("Onset Boost",0,2,.01),("Bass Weight",0,2,.01),("Mid Weight",0,2,.01),("High Weight",0,2,.01)
         design=("Width",.1,1,.01),("Height",.05,.9,.01),("Bar Width",.05,1,.01),("Gap",0,.95,.01),("Roundness",0,1,.01),("Opacity",0,1,.01)
-        self.tabs.addTab(self._control_tab(audio,"audio"),"Audio");widget=self._control_tab(design,"design");form=widget.layout();self._combo(form,"Style",["bars","line","dot"],"renderer");self._combo(form,"Position",["top","center","bottom"],"position");self._check(form,"Mirror","mirror");self._color_button(form,"Main Color","color");self._check(form,"Gradient","gradient");self._color_button(form,"Gradient Start","gradient_start");self._color_button(form,"Gradient End","gradient_end");self.tabs.addTab(widget,"Design")
+        audio_widget=self._control_tab(audio,"audio");advanced=QFormLayout();self.analysis_mode=QComboBox();self.analysis_mode.addItems(["STANDARD","ADVANCED"]);self.fft_window=QComboBox();self.fft_window.addItems(["hann","hamming","blackman"]);self.spectrum_mapping=QComboBox();self.spectrum_mapping.addItems(["AUTO","LOG","PERCEPTUAL"]);audio_widget.layout().addRow("Analysis Mode",self.analysis_mode);audio_widget.layout().addRow("FFT Window",self.fft_window);audio_widget.layout().addRow("Spectrum Mapping",self.spectrum_mapping);self.tabs.addTab(audio_widget,"Audio");widget=self._control_tab(design,"design");form=widget.layout();self._combo(form,"Style",["bars","line","dot"],"renderer");self._combo(form,"Position",["top","center","bottom"],"position");self._check(form,"Mirror","mirror");self._color_button(form,"Main Color","color");self._check(form,"Gradient","gradient");self._color_button(form,"Gradient Start","gradient_start");self._color_button(form,"Gradient End","gradient_end");self.tabs.addTab(widget,"Design")
         effects=QWidget();f=QFormLayout(effects);self._check(f,"Glow","glow");self._number(f,"Glow Strength",0,2,.05,"glow_strength");self._number(f,"Glow Radius",0,40,1,"glow_radius");self._check(f,"Shadow","shadow");self.tabs.addTab(effects,"Effects");self.tabs.addTab(self._export_tab(),"Export");scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(self.tabs);return scroll
     def _control_tab(self,items,prefix):
         widget=QWidget();form=QFormLayout(widget)
@@ -84,12 +90,12 @@ class MainWindow(QMainWindow):
     def _color_button(self,form,label,key):
         button=QPushButton();button.clicked.connect(lambda:self.pick_color(key));self.fields[key]=button;form.addRow(label,button)
     def _export_tab(self):
-        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","webm","mov"]);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080)
-        for label,control in (("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("Skip completed outputs",self.skip_completed)):form.addRow(label,control)
+        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","webm","mov"]);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        for label,control in (("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed)):form.addRow(label,control)
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
         box=QWidget();v=QVBoxLayout(box);row=QHBoxLayout()
-        for text,fn in (("Analyze",self.analyze_audio),("Render",self.render),("Batch Render",self.render),("Validate 15 Tracks",self.validate_tracks),("System Check",self.system_check),("Cancel",self.cancel)):
+        for text,fn in (("Analyze",self.analyze_audio),("Render",self.render),("Batch Render",self.render),("Render Playlist",self.render_playlist),("Validate 15 Tracks",self.validate_tracks),("System Check",self.system_check),("Cancel",self.cancel)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         v.addLayout(row);self.song_progress=QProgressBar();self.total_progress=QProgressBar();v.addWidget(self.song_progress);v.addWidget(self.total_progress);self.status=QLabel("Ready");self.performance=QLabel("Renderer: —  |  Preview FPS: —  |  Cache: —  |  Analysis: —");v.addWidget(self.status);v.addWidget(self.performance);return box
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#121720;color:#DDE6F1;font-size:12px}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox{background:#202938;border:1px solid #344258;padding:6px;border-radius:4px}QPushButton:hover{border-color:#55B8FF}QTabWidget::pane{border:1px solid #283343}QListWidget{background:#0D1219;border:1px solid #283343}QProgressBar{border:1px solid #344258;text-align:center}QProgressBar::chunk{background:#3B9EFF}")
@@ -132,7 +138,7 @@ class MainWindow(QMainWindow):
         self.template_list.clear()
         values=np.abs(np.sin(np.linspace(0,np.pi*3,36)))*.8+.1
         for path,data in list_templates(resource_path("templates"),"my_templates"):
-            item=QListWidgetItem(data["name"]);item.setData(Qt.UserRole,str(path));thumb=CPURenderer().render_rgba(180,72,{"values":values},dict(data,glow=False));image=QImage(thumb.data,180,72,thumb.strides[0],QImage.Format_RGBA8888).copy();item.setIcon(QIcon(QPixmap.fromImage(image)));self.template_list.addItem(item)
+            item=QListWidgetItem(data["name"]);item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
     def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start()
     def save_my_template(self):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
@@ -159,7 +165,7 @@ class MainWindow(QMainWindow):
         color=QColorDialog.getColor(QColor(self.template.get(key,"#FFFFFF")),self)
         if color.isValid():self.template[key]=color.name().upper();self.sync_controls();self.debounce.start()
     def analyze_audio(self):
-        if self.audio_files:self.start_task("analysis",(self.audio_files[0],int(self.template["bands"])))
+        if self.audio_files:self.start_task("analysis",(self.audio_files[0],AnalysisSettings(fps=24,bands=int(self.template["bands"]),fft_window=self.fft_window.currentText(),spectrum_mapping=self.spectrum_mapping.currentText())))
     def start_task(self,kind,payload):
         if self.thread and self.thread.isRunning():return
         self.thread=QThread();self.worker=TaskWorker(kind,payload);self.worker.moveToThread(self.thread);self.thread.started.connect(self.worker.run);self.worker.status.connect(self.status.setText);self.worker.progress.connect(lambda a,b:self.total_progress.setValue(int(a*100/b)));self.worker.failed.connect(self.task_failed);self.worker.done.connect(lambda result:self.task_done(kind,result));self.worker.done.connect(self.thread.quit);self.worker.failed.connect(self.thread.quit);self.thread.start();self.status.setText(f"{kind.title()} running…")
@@ -168,6 +174,7 @@ class MainWindow(QMainWindow):
             features,hit,elapsed=result;self.preview_engine.features=features;self.preview_engine.template=dict(self.template);self.preview_engine.metrics.cache_hit=hit;self.preview_engine.metrics.analysis_seconds=elapsed;self.timeline.setMaximum(int(float(features["duration"][0])*1000));self.start_preview_worker(features);self.render_preview()
         elif kind in ("images","video"):self.apply_reference(result)
         elif kind=="validation":self.status.setText(f"Validation: {result['successful_tracks']}/{result['total_tracks']} ready; report saved");return
+        elif kind=="playlist":self.status.setText(f"Playlist complete: {result['success']} success, {result['failed']} failed");return
         else:
             self.total_progress.setValue(100)
             successful=[item for item in result if item.get("status")=="success"]
@@ -203,12 +210,29 @@ class MainWindow(QMainWindow):
         if not out:return
         if self.resolution.currentText()=="Custom":w,h=self.custom_width.value(),self.custom_height.value()
         else:w,h=map(int,self.resolution.currentText().split("x"))
-        options=ExportOptions(w,h,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),self.export_format.currentText());self.start_task("render",(self.audio_files,out,copy.deepcopy(self.template),options,self.skip_completed.isChecked()))
+        space=disk_warning(out);
+        if space["warning"] and QMessageBox.warning(self,"Low Disk Space",f"Only {space['free']/1024**3:.1f} GB is available. Continue?",QMessageBox.Yes|QMessageBox.No)!=QMessageBox.Yes:return
+        options=ExportOptions(w,h,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),self.export_format.currentText(),self.ffmpeg_path.text() or None);self.start_task("render",(self.audio_files,out,copy.deepcopy(self.template),options,self.skip_completed.isChecked()))
+    def render_playlist(self):
+        project=self.playlist_panel.project
+        if not project.tracks:return
+        out=QFileDialog.getExistingDirectory(self,"Playlist output directory",project.output_dir or "output")
+        if not out:return
+        resolution=self.resolution.currentText() if self.resolution.currentText()!="Custom" else "custom"
+        export={"resolution":resolution,"width":self.custom_width.value(),"height":self.custom_height.value(),"fps":int(self.export_fps.currentText()),"renderer":self.renderer_choice.currentText(),"quality":self.quality.currentText(),"ffmpeg_path":self.ffmpeg_path.text() or None}
+        tracks=[{"audio":track.source_path,"preset":track.preset,"format":track.output_format,"export":track.export_override} for track in project.tracks if track.status!="completed" or not self.skip_completed.isChecked()]
+        self.start_task("playlist",{"contract_version":1,"tracks":tracks,"output_dir":out,"format":self.export_format.currentText(),"export":export})
     def validate_tracks(self):
         folder=QFileDialog.getExistingDirectory(self,"Select folder with up to 15 tracks")
         if folder:self.start_task("validation",(folder,"validation_results/user_audio_validation.json",15))
+    def _restore_settings(self):
+        self.renderer_choice.setCurrentText(str(self.app_settings.get('renderer_mode','AUTO')))
+        self.quality.setCurrentText(str(self.app_settings.get('quality','BALANCED')))
+        self.resolution.setCurrentText(str(self.app_settings.get('resolution','1920x1080')))
+        self.export_fps.setCurrentText(str(self.app_settings.get('fps','30')))
+        self.ffmpeg_path.setText(str(self.app_settings.get("ffmpeg_path","") or ""));self.app_settings.restore_window(self)
     def closeEvent(self,event):
-        self.stop_preview_worker();super().closeEvent(event)
+        self.app_settings.set("renderer_mode",self.renderer_choice.currentText());self.app_settings.set("quality",self.quality.currentText());self.app_settings.set("resolution",self.resolution.currentText());self.app_settings.set("fps",self.export_fps.currentText());self.app_settings.set("ffmpeg_path",self.ffmpeg_path.text());self.app_settings.save_window(self);self.stop_preview_worker();super().closeEvent(event)
     def system_check(self):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):

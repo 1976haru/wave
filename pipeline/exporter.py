@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from audio.analyzer import AnalysisSettings,analyze_file
+from core.ffmpeg import resolve_ffmpeg
 from animation.engine import AnimationEngine
 from render.renderer import RendererFactory
 from render.quality import PRESETS
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
 @dataclass
 class ExportOptions:
-    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4"
+    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None
     @classmethod
     def from_resolution(cls,resolution="1920x1080",**kwargs):
         width,height=RESOLUTIONS.get(resolution,(kwargs.pop("width",1920),kwargs.pop("height",1080)));return cls(width=width,height=height,**kwargs)
@@ -21,7 +22,7 @@ def build_ffmpeg_command(ffmpeg,output,options,audio):
     if suffix==".mov":return common+["-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le","-c:a","pcm_s16le",str(output)]
     return common+["-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(preset["crf"]),"-c:a","aac",str(output)]
 def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print):
-    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer);ffmpeg=shutil.which("ffmpeg")
+    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
     if not ffmpeg:raise RuntimeError("FFmpeg is required for video export")
     output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);total=max(1,math.ceil(float(features["duration"][0])*options.fps));started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path),stdin=subprocess.PIPE)
     try:
