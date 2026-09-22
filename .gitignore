@@ -10,3 +10,4 @@ build/
 my_templates/
 validation_results/
 !music_wave_studio.spec
+.venv312/

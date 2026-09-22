@@ -1,24 +1,33 @@
 # Architecture
 
-Music Wave Studio v0.5.2 keeps four production layers independent: cached audio analysis, time-based animation, true-RGBA rendering, and reusable templates.
+Music Wave Studio v0.6 retains four independent production layers: cached audio analysis, time-based animation, true-RGBA design rendering, and reusable templates.
 
-## Interactive path
+## Preview concurrency
 
-`ui/roi_widget.py` maps a letterboxed, DPI-independent Qt selection rectangle back to exact source-image coordinates. The dialog darkens the unselected area and supports reset, apply, and cancel. Reference analysis runs in a worker and presents extracted values before template application.
+Qt Multimedia is the authoritative audio clock. `FrameScheduler` selects the newest audio frame index and drops obsolete indices. The GUI writes frame requests into `LatestFrameMailbox`, a thread-safe single-slot mailbox. `PreviewRenderWorker` owns AnimationEngine and the CPU/ModernGL renderer in its QThread, including the OpenGL context. The GUI receives completed NumPy RGBA frames only; stale results beyond the current audio time tolerance are discarded.
 
-`preview/` renders 960×540 frames directly from cached features. `FrameScheduler` derives the desired frame index from the authoritative Qt audio clock. It drops obsolete indices, jumps to the newest time, resets on seek/backward time, and records rendered/dropped frames and maximum drift. No temporary preview video or repeat FFT is used.
+## Rendering and quality
 
-## Rendering
+The ModernGL path provides instanced bars/dots, connected line triangle strips, RGBA framebuffer rendering, horizontal/vertical GLSL blur, and GPU composite. AUTO handles initialization and runtime shader/context errors by switching to CPU.
 
-The CPU renderer covers bars, connected lines, dots, mirror, gradient, opacity, roundness, shadow, and glow. The ModernGL renderer uses instanced bars/dots, a connected triangle-strip polyline, an RGBA offscreen framebuffer, horizontal and vertical GLSL blur passes, and a GPU composite pass. AUTO catches both initialization and render-time shader/context failure and permanently switches that renderer instance to CPU.
+CPU glow is profiled and quality-aware. PREVIEW uses a quarter-resolution glow buffer, BALANCED uses half resolution, and QUALITY uses full resolution. Gradient LUTs are cached. Export writes contiguous NumPy memory directly to FFmpeg without a `tobytes()` frame copy. Animation, renderer, pipe blocking, and final encoder wait are timed separately to identify Renderer versus Encoder bottlenecks.
 
-## Validation
+## Batch safety
 
-- `tools/system_check.py`: Python/dependencies/GPU context/FFmpeg encoders.
-- `tools/validate_audio.py`: up to 15 tracks by default, decode metadata, cold/warm cache, memory, preview and render estimates, JSON/TXT report.
-- `tools/validate_preview.py`: deterministic 10/30/60 second scheduling sessions.
-- `tools/benchmark_render.py`: CPU/GPU frame generation and FFmpeg encode timing for preview, landscape, and portrait.
-- `tools/export_smoke.py`: codec, resolution, FPS, alpha, audio, and one-frame duration tolerance.
-- `tools/create_capcut_test.py`: manual CapCut compatibility assets and checklist.
+`BatchRunner` writes `batch_state.json` through an atomic temporary replacement. A stale `rendering` entry becomes pending on restart. Completed outputs may be skipped, while failed and cancelled entries remain visible. `error_report.json` is preserved.
 
-CPU visual baselines cover bars, line, dot, mirror, gradient, glow, opacity, and roundness. GPU comparison activates only when a ModernGL context exists.
+## Distribution
+
+`music_wave_studio.spec` bundles templates, smoke resources, PyAV, ModernGL, OpenCV, and the Qt modules discovered from actual imports. `core.resource_path` resolves source and PyInstaller `_MEIPASS` resources. FFmpeg remains an explicit system PATH dependency.
+
+## Validation tools
+
+- `system_check.py`: dependencies, GPU context, and encoders.
+- `validate_audio.py`: 15 tracks by default, metadata, cold/warm cache, CPU/GPU estimates, memory, JSON/TXT.
+- `validate_preview.py`: 10/30/60 second scheduler validation.
+- `profile_render.py`: animation and CPU renderer stages.
+- `benchmark_render.py`: CPU/GPU generation, memory, FFmpeg encoding, and one-hour estimates.
+- `export_smoke.py`: resolution, FPS, alpha, audio, and duration regression.
+- `create_capcut_test.py`: three manual CapCut test assets and checklist.
+
+CPU visual baselines cover eight renderer features. GPU perceptual comparison activates whenever a ModernGL context is available.

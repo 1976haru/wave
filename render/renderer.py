@@ -1,14 +1,19 @@
 from __future__ import annotations
 import numpy as np
+from functools import lru_cache
+from time import perf_counter
 
 def parse_color(value):
     value=str(value or "#FFFFFF").lstrip("#")
     if len(value)!=6:value="FFFFFF"
     return np.array([int(value[i:i+2],16) for i in (0,2,4)],np.float32)
-def gradient_colors(template,count):
-    start=parse_color(template.get("gradient_start") or template.get("color","#FFFFFF"));end=parse_color(template.get("gradient_end") or template.get("color","#FFFFFF"));enabled=bool(template.get("gradient"))
+@lru_cache(maxsize=256)
+def _gradient_lut(start_value,end_value,enabled,count):
+    start=parse_color(start_value);end=parse_color(end_value)
     if not enabled:end=start
     return np.linspace(start,end,max(1,count)).astype(np.uint8)
+def gradient_colors(template,count):
+    return _gradient_lut(str(template.get("gradient_start") or template.get("color","#FFFFFF")),str(template.get("gradient_end") or template.get("color","#FFFFFF")),bool(template.get("gradient")),int(count))
 def _geometry(w,h,values,t):
     usable=max(1,int(w*float(t.get("width",.72))));x0=(w-usable)//2;step=usable/max(1,len(values));base={"top":int(h*.18),"center":int(h*.5),"bottom":int(h*.82)}.get(t.get("position","bottom"),int(h*.82));maximum=max(1,int(h*float(t.get("height",.22))));gap=np.clip(float(t.get("gap",.45)),0,.95);width=max(1,int(step*float(t.get("bar_width",1-gap))));return x0,step,base,maximum,width
 
@@ -22,10 +27,11 @@ def build_line_vertices(w,h,values,template,mirror=False):
 
 class CPURenderer:
     name="CPU"
+    def __init__(self):self.last_profile={}
     def render_rgba(self,w,h,state,template):
         try:import cv2
         except ImportError:return self._numpy(w,h,state,template)
-        values=np.asarray(state["values"],np.float32);x0,step,base,maximum,bw=_geometry(w,h,values,template);colors=gradient_colors(template,len(values));opacity=int(255*np.clip(float(template.get("opacity",1)),0,1));style=str(template.get("renderer",template.get("style","bars"))).lower();rgb=np.zeros((h,w,3),np.uint8);alpha=np.zeros((h,w),np.uint8);mirror=bool(template.get("mirror"));points=[]
+        total_started=perf_counter();values=np.asarray(state["values"],np.float32);setup_started=perf_counter();x0,step,base,maximum,bw=_geometry(w,h,values,template);colors=gradient_colors(template,len(values));setup_elapsed=perf_counter()-setup_started;allocation_started=perf_counter();opacity=int(255*np.clip(float(template.get("opacity",1)),0,1));style=str(template.get("renderer",template.get("style","bars"))).lower();rgb=np.zeros((h,w,3),np.uint8);alpha=np.zeros((h,w),np.uint8);allocation_elapsed=perf_counter()-allocation_started;draw_started=perf_counter();mirror=bool(template.get("mirror"));points=[]
         def bar(x,a,color,down=False):
             y1,y2=(base,min(h-1,base+a)) if down else (max(0,base-a),base);radius=int(min(bw/2,a/2)*np.clip(float(template.get("roundness",0)),0,1));cv2.rectangle(rgb,(x-bw//2,y1),(x+bw//2,y2),tuple(map(int,color)),-1,cv2.LINE_AA);cv2.rectangle(alpha,(x-bw//2,y1),(x+bw//2,y2),opacity,-1,cv2.LINE_AA)
             if radius:cy=y2 if down else y1;cv2.circle(rgb,(x,cy),bw//2,tuple(map(int,color)),-1,cv2.LINE_AA);cv2.circle(alpha,(x,cy),bw//2,opacity,-1,cv2.LINE_AA)
@@ -40,11 +46,16 @@ class CPURenderer:
             for i,(a,b) in enumerate(zip(points[:-1],points[1:])):
                 color=tuple(map(int,colors[i]));cv2.line(rgb,a,b,color,thickness,cv2.LINE_AA);cv2.line(alpha,a,b,opacity,thickness,cv2.LINE_AA)
                 if mirror:ma=(a[0],2*base-a[1]);mb=(b[0],2*base-b[1]);cv2.line(rgb,ma,mb,color,thickness,cv2.LINE_AA);cv2.line(alpha,ma,mb,opacity,thickness,cv2.LINE_AA)
+        draw_elapsed=perf_counter()-draw_started;glow_started=perf_counter()
         if template.get("shadow"):
             shadow=cv2.GaussianBlur(alpha,(0,0),max(1,float(template.get("glow_radius",10))/2));alpha=np.maximum(alpha,(shadow*.25).astype(np.uint8))
         if template.get("glow"):
-            radius=max(.1,float(template.get("glow_radius",10)));strength=max(0,float(template.get("glow_strength",.55)));ga=cv2.GaussianBlur(alpha,(0,0),radius);gr=cv2.GaussianBlur(rgb,(0,0),radius);alpha=np.maximum(alpha,np.clip(ga*strength,0,255).astype(np.uint8));rgb=np.clip(rgb.astype(np.float32)+gr.astype(np.float32)*strength,0,255).astype(np.uint8)
-        return np.dstack((rgb,alpha))
+            radius=max(.1,float(template.get("glow_radius",10)));strength=max(0,float(template.get("glow_strength",.55)));quality=str(template.get("_quality","QUALITY"));default_scale={"PREVIEW":.25,"BALANCED":.5,"QUALITY":1.0}.get(quality,1.0);scale=float(template.get("_glow_scale",default_scale))
+            if scale<.999:
+                size=(max(1,round(w*scale)),max(1,round(h*scale)));small_a=cv2.resize(alpha,size,interpolation=cv2.INTER_AREA);small_rgb=cv2.resize(rgb,size,interpolation=cv2.INTER_AREA);ga=cv2.resize(cv2.GaussianBlur(small_a,(0,0),max(.1,radius*scale)),(w,h),interpolation=cv2.INTER_LINEAR);gr=cv2.resize(cv2.GaussianBlur(small_rgb,(0,0),max(.1,radius*scale)),(w,h),interpolation=cv2.INTER_LINEAR)
+            else:ga=cv2.GaussianBlur(alpha,(0,0),radius);gr=cv2.GaussianBlur(rgb,(0,0),radius)
+            alpha=cv2.max(alpha,cv2.convertScaleAbs(ga,alpha=strength));rgb=cv2.addWeighted(rgb,1.0,gr,strength,0)
+        glow_elapsed=perf_counter()-glow_started;final_started=perf_counter();result=np.dstack((rgb,alpha));final_elapsed=perf_counter()-final_started;self.last_profile={"setup_ms":setup_elapsed*1000,"allocation_ms":allocation_elapsed*1000,"draw_ms":draw_elapsed*1000,"glow_ms":glow_elapsed*1000,"final_copy_ms":final_elapsed*1000,"total_ms":(perf_counter()-total_started)*1000};return result
     def _numpy(self,w,h,state,t):
         out=np.zeros((h,w,4),np.uint8);values=np.asarray(state["values"]);x0,step,base,maximum,bw=_geometry(w,h,values,t);colors=gradient_colors(t,len(values));opacity=int(255*float(t.get("opacity",1)))
         for i,v in enumerate(values):

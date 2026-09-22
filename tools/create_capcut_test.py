@@ -12,5 +12,20 @@ def main():
     with wave.open(str(audio),"wb") as stream:stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(sr);stream.writeframes(np.clip(signal*32767,-32768,32767).astype("<i2").tobytes())
     template=load_template("templates/04_tokyo_night.json")
     for name,fmt in (("01_screen.mp4","mp4"),("02_alpha.webm","webm"),("03_prores4444.mov","mov")):render_audio(audio,root/name,template,ExportOptions(1280,720,30,"PREVIEW","CPU",fmt))
-    audio.unlink();(root/"README_CAPCUT_TEST.md").write_text("""# CapCut compatibility test\n\nImport all three files and check:\n\n- Each file imports and plays normally with audio.\n- `01_screen.mp4` works over footage using Screen blend.\n- `02_alpha.webm` preserves transparency if the CapCut build supports VP9 alpha.\n- `03_prores4444.mov` preserves transparency.\n- Colors match, frame rate is stable, and duration matches.\n\nRecord CapCut version and any observed color, alpha, audio, or timing issue.\n""",encoding="utf-8");print(root.resolve())
+    audio.unlink();checklist="""CAPCUT TEST CHECKLIST
+
+[ ] MP4 import
+[ ] MP4 Screen blend
+[ ] WebM import
+[ ] WebM transparency
+[ ] MOV import
+[ ] MOV transparency
+[ ] audio
+[ ] sync
+[ ] color
+[ ] glow edge
+[ ] playback
+
+Record CapCut version and issues below:
+"""; (root/"CAPCUT_TEST_CHECKLIST.txt").write_text(checklist,encoding="utf-8");(root/"README_CAPCUT_TEST.md").write_text("""# CapCut compatibility test\n\nImport all three files and check:\n\n- Each file imports and plays normally with audio.\n- `01_screen.mp4` works over footage using Screen blend.\n- `02_alpha.webm` preserves transparency if the CapCut build supports VP9 alpha.\n- `03_prores4444.mov` preserves transparency.\n- Colors match, frame rate is stable, and duration matches.\n\nRecord CapCut version and any observed color, alpha, audio, or timing issue.\n""",encoding="utf-8");print(root.resolve())
 if __name__=="__main__":main()

@@ -26,7 +26,7 @@ def main():
     for scenario,width,height,fps in SCENARIOS:
         encode=benchmark_encode(width,height,fps,args.frames);encode.update(scenario=scenario,width=width,height=height,target_fps=fps);encoders.append(encode)
         for filename in TEMPLATES:
-            template=load_template(Path("templates")/filename)
+            template=dict(load_template(Path("templates")/filename),_quality="BALANCED")
             for renderer in ("CPU","GPU"):
                 result=benchmark(renderer,width,height,template,args.frames);result.update(scenario=scenario,width=width,height=height,target_fps=fps,template=template["name"],requested_renderer=renderer);results.append(result);print(scenario,template["name"],renderer,result.get("fps",result.get("status")))
     target=Path(args.output);target.parent.mkdir(parents=True,exist_ok=True);target.write_text(json.dumps({"render_results":results,"ffmpeg_encode_results":encoders},indent=2),encoding="utf-8")
