@@ -60,7 +60,7 @@ def test_gpu_failure_cpu_fallback(monkeypatch):
     class Broken:
         def __init__(self): raise RuntimeError("no GPU")
     monkeypatch.setattr(module,"GPUBarRenderer",Broken)
-    assert isinstance(RendererFactory.create("AUTO"),CPURenderer)
+    auto=RendererFactory.create("AUTO"); image=auto.render_rgba(80,40,{"values":np.ones(4)},{"renderer":"bars"}); assert auto.name=="CPU" and image.shape==(40,80,4)
     with pytest.raises(RuntimeError): RendererFactory.create("GPU")
 
 def test_batch_partial_failure_and_report(tmp_path):

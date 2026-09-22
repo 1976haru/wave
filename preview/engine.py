@@ -28,6 +28,9 @@ class PreviewEngine:
                 source=self.features["spectrum"]; old=np.linspace(0,1,current); new=np.linspace(0,1,requested); self.features=dict(self.features); self.features["spectrum"]=np.stack([np.interp(new,old,row) for row in source]).astype(np.float32); self.features["bands"]=np.array([requested])
             self.animation=AnimationEngine(self.features,self.template); self.last_time=-1
         return requested!=current
+    def seek(self,seconds):
+        self.last_time=float(seconds);
+        if self.animation is not None:self.animation.reset()
     def frame(self,seconds):
         if self.animation is None: raise RuntimeError("Preview audio is not loaded")
         seconds=max(0,min(float(seconds),self.duration));

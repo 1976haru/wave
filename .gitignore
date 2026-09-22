@@ -9,3 +9,4 @@ build/
 *.spec
 my_templates/
 validation_results/
+!music_wave_studio.spec

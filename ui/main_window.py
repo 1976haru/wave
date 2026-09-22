@@ -7,13 +7,17 @@ from PySide6.QtGui import QColor,QIcon,QImage,QPixmap
 from PySide6.QtMultimedia import QAudioOutput,QMediaPlayer
 from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
 from audio.analyzer import AnalysisSettings,analyze_file
+from core.paths import resource_path
 from animation.engine import AnimationEngine
 from pipeline.batch import BatchRunner
 from pipeline.exporter import ExportOptions,output_extension
 from preview.engine import PreviewEngine,format_time
+from preview.scheduler import FrameScheduler
 from reference.analyzer import analyze_images,analyze_video
 from render.renderer import CPURenderer,RendererFactory
 from template_system import list_templates,load_template,save_template
+from ui.roi_widget import ROIDialog
+from tools.system_check import check_system,format_report
 
 class TaskWorker(QObject):
     done=Signal(object);failed=Signal(str);status=Signal(str);progress=Signal(int,int)
@@ -29,21 +33,23 @@ class TaskWorker(QObject):
             else:result=analyze_video(*self.payload)
             self.done.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
+    def system_check(self):
+        report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
         if self.runner:self.runner.cancel()
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.setWindowTitle("Music Wave Studio v0.5.1");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template("templates/01_clean_bars.json");self.preview_engine=PreviewEngine();self.current_time=0;self.thread=None;self.worker=None;self._syncing=False
+        super().__init__();self.setWindowTitle("Music Wave Studio v0.5.2");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
-        self.preview_timer=QTimer(self);self.preview_timer.setInterval(1000//24);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
+        self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);body=QHBoxLayout();layout.addLayout(body,1);body.addWidget(self._left_panel(),2);body.addWidget(self._center_panel(),5);body.addWidget(self._right_panel(),3);layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls()
     def _left_panel(self):
         tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);m.addWidget(button);tabs.addTab(media,"Media")
         ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel("Reference Images (max 5)"));r.addWidget(self.ref_list);row=QHBoxLayout()
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
-        r.addLayout(row);b=QPushButton("Auto Analyze Images");b.clicked.connect(self.analyze_reference_images);r.addWidget(b);b=QPushButton("Manual ROI");b.clicked.connect(self.set_roi);r.addWidget(b);self.video_label=QLabel("No reference video");r.addWidget(self.video_label);b=QPushButton("Select 5–10s Video");b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton("Analyze Motion");b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
+        r.addLayout(row);b=QPushButton("Auto Analyze Images");b.clicked.connect(self.analyze_reference_images);r.addWidget(b);roirow=QHBoxLayout();b=QPushButton("Draw ROI");b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton("Coordinate ROI");b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton("Reset ROI");b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel("No reference video");r.addWidget(self.video_label);b=QPushButton("Select 5–10s Video");b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton("Analyze Motion");b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
         templates=QWidget();t=QVBoxLayout(templates);self.template_list=QListWidget();self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"Templates");return tabs
     def _center_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
@@ -75,7 +81,7 @@ class MainWindow(QMainWindow):
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
         box=QWidget();v=QVBoxLayout(box);row=QHBoxLayout()
-        for text,fn in (("Analyze",self.analyze_audio),("Render",self.render),("Batch Render",self.render),("Cancel",self.cancel)):
+        for text,fn in (("Analyze",self.analyze_audio),("Render",self.render),("Batch Render",self.render),("System Check",self.system_check),("Cancel",self.cancel)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         v.addLayout(row);self.song_progress=QProgressBar();self.total_progress=QProgressBar();v.addWidget(self.song_progress);v.addWidget(self.total_progress);self.status=QLabel("Ready");self.performance=QLabel("Renderer: —  |  Preview FPS: —  |  Cache: —  |  Analysis: —");v.addWidget(self.status);v.addWidget(self.performance);return box
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#121720;color:#DDE6F1;font-size:12px}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox{background:#202938;border:1px solid #344258;padding:6px;border-radius:4px}QPushButton:hover{border-color:#55B8FF}QTabWidget::pane{border:1px solid #283343}QListWidget{background:#0D1219;border:1px solid #283343}QProgressBar{border:1px solid #344258;text-align:center}QProgressBar::chunk{background:#3B9EFF}")
@@ -93,6 +99,13 @@ class MainWindow(QMainWindow):
     def clear_reference(self):self.reference_images.clear();self.ref_list.clear();self.roi=None
     def add_video(self):
         path,_=QFileDialog.getOpenFileName(self,"Reference video","","Video (*.mp4 *.mov *.webm *.mkv)");self.reference_video=path or None;self.video_label.setText(Path(path).name if path else "No reference video")
+    def draw_roi(self):
+        if not self.reference_images:return
+        row=self.ref_list.currentRow();path=self.reference_images[row if row>=0 else 0];dialog=ROIDialog(path,self)
+        if dialog.exec():
+            roi=dialog.roi()
+            if roi:self.roi=roi;self.status.setText(f"ROI: {roi}");self.analyze_reference_images()
+    def reset_roi(self):self.roi=None;self.status.setText("ROI reset; full image analysis active")
     def set_roi(self):
         text,ok=QInputDialog.getText(self,"Manual ROI","x, y, width, height")
         if ok:
@@ -103,11 +116,14 @@ class MainWindow(QMainWindow):
     def analyze_motion(self):
         if self.reference_video:self.start_task("video",(self.reference_video,self.roi,10))
     def apply_reference(self,result):
-        before=copy.deepcopy(self.template);self.template.update(result);self.sync_controls();self.debounce.start();changed=[f"{k}: {before.get(k)} → {self.template.get(k)}" for k in result if before.get(k)!=self.template.get(k)];QMessageBox.information(self,"Reference applied","Applied to current template:\n"+"\n".join(changed[:12]))
+        summary="\n".join(f"{key}: {value}" for key,value in list(result.items())[:12])
+        message=f"Analysis result:\n{summary}\n\nApply to current template?"
+        if QMessageBox.question(self,"Reference analysis",message)!=QMessageBox.Yes:return
+        before=copy.deepcopy(self.template);self.template.update(result);self.sync_controls();self.debounce.start();changed=[f"{key}: {before.get(key)} -> {self.template.get(key)}" for key in result if before.get(key)!=self.template.get(key)];QMessageBox.information(self,"Reference applied","Applied to current template:\n"+"\n".join(changed[:12]))
     def refresh_templates(self):
         self.template_list.clear()
         values=np.abs(np.sin(np.linspace(0,np.pi*3,36)))*.8+.1
-        for path,data in list_templates("templates","my_templates"):
+        for path,data in list_templates(resource_path("templates"),"my_templates"):
             item=QListWidgetItem(data["name"]);item.setData(Qt.UserRole,str(path));thumb=CPURenderer().render_rgba(180,72,{"values":values},dict(data,glow=False));image=QImage(thumb.data,180,72,thumb.strides[0],QImage.Format_RGBA8888).copy();item.setIcon(QIcon(QPixmap.fromImage(image)));self.template_list.addItem(item)
     def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start()
     def save_my_template(self):
@@ -153,14 +169,16 @@ class MainWindow(QMainWindow):
     def render_preview(self):
         if self.preview_engine.animation is None:return
         try:
-            image=self.preview_engine.frame(self.current_time);h,w=image.shape[:2];q=QImage(image.data,w,h,image.strides[0],QImage.Format_RGBA8888).copy();self.preview.setPixmap(QPixmap.fromImage(q).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation));m=self.preview_engine.metrics;self.performance.setText(f"Renderer: {m.renderer}  |  Preview FPS: {m.fps:.1f}  |  Cache: {'HIT' if m.cache_hit else 'MISS'}  |  Analysis: {m.analysis_seconds:.2f}s")
+            image=self.preview_engine.frame(self.current_time);h,w=image.shape[:2];q=QImage(image.data,w,h,image.strides[0],QImage.Format_RGBA8888).copy();self.preview.setPixmap(QPixmap.fromImage(q).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation));m=self.preview_engine.metrics;timing=self.scheduler.metrics;self.performance.setText(f"Renderer: {m.renderer} | Preview FPS: {m.fps:.1f} | Dropped: {timing.dropped_frames} | Drift: {timing.max_drift*1000:.1f} ms | Cache: {'HIT' if m.cache_hit else 'MISS'} | Analysis: {m.analysis_seconds:.2f}s")
         except Exception as exc:self.status.setText(str(exc))
     def play(self):
-        if self.preview_engine.animation is not None:self.player.play();self.preview_timer.start()
+        if self.preview_engine.animation is not None:self.scheduler.reset(self.player.position()/1000,time.perf_counter());self.player.play();self.preview_timer.start()
     def pause(self):self.player.pause();self.preview_timer.stop()
-    def stop(self):self.player.stop();self.preview_timer.stop();self.current_time=0;self.timeline.setValue(0);self.render_preview()
-    def seek(self,milliseconds):self.player.setPosition(milliseconds);self.current_time=milliseconds/1000;self.render_preview()
-    def _tick(self):self.current_time=self.player.position()/1000;self.render_preview()
+    def stop(self):self.player.stop();self.preview_timer.stop();self.current_time=0;self.scheduler.reset(0,time.perf_counter());self.preview_engine.seek(0);self.timeline.setValue(0);self.render_preview()
+    def seek(self,milliseconds):self.player.setPosition(milliseconds);self.current_time=milliseconds/1000;self.scheduler.seek(self.current_time,time.perf_counter());self.preview_engine.seek(self.current_time);self.render_preview()
+    def _tick(self):
+        self.current_time=self.player.position()/1000;now=time.perf_counter()
+        if self.scheduler.should_render(self.current_time,now):self.render_preview()
     def _media_position(self,value):self.timeline.setValue(value);self.time_label.setText(f"{format_time(value/1000)} / {format_time(self.player.duration()/1000)}")
     def _media_duration(self,value):self.timeline.setMaximum(value)
     def _format_help(self,value):self.format_help.setText({"mp4":"MP4 H.264 · black background · CapCut Screen blend","webm":"WebM VP9 · transparent alpha","mov":"MOV ProRes 4444 · transparent alpha"}[value])
@@ -171,5 +189,7 @@ class MainWindow(QMainWindow):
         if self.resolution.currentText()=="Custom":w,h=self.custom_width.value(),self.custom_height.value()
         else:w,h=map(int,self.resolution.currentText().split("x"))
         options=ExportOptions(w,h,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),self.export_format.currentText());self.start_task("render",(self.audio_files,out,copy.deepcopy(self.template),options))
+    def system_check(self):
+        report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
         if self.worker:self.worker.cancel();self.status.setText("Cancelling…")
