@@ -22,6 +22,9 @@ def packaged_smoke(window,application):
         from ui.roi_widget import ROIImageLabel
         template=load_template(resource_path("templates/01_clean_bars.json"));reference=ROIImageLabel(resource_path("resources/smoke_reference.png"));sr=8000;samples=np.sin(2*np.pi*220*np.arange(sr)/sr).astype(np.float32);features=analyze_pcm(samples,sr,fps=24,bands=16,fft_size=512);state=AnimationEngine(features,template).sample(.25);image=RendererFactory.create("CPU").render_rgba(320,180,state,dict(template,glow=False));report={"status":"pass","templates":window.template_list.count(),"reference_image":not reference.original.isNull(),"audio_frames":len(features["spectrum"]),"preview_shape":list(image.shape),"preview_alpha":int(image[:,:,3].max()),"ffmpeg":__import__("shutil").which("ffmpeg")}
     except Exception as exc:report={"status":"failed","error":repr(exc)}
+    shot_dir=Path(os.environ.get("MWS_SCREENSHOT_DIR",""));
+    if shot_dir:
+        shot_dir.mkdir(parents=True,exist_ok=True);window.grab().save(str(shot_dir/"gui_simple_korean.png"));window.left_tabs.setCurrentWidget(window.queue_panel);window.grab().save(str(shot_dir/"gui_queue_korean.png"))
     target=Path(os.environ.get("MWS_SMOKE_REPORT",Path(tempfile.gettempdir())/"music_wave_smoke.json"));target.write_text(json.dumps(report,indent=2),encoding="utf-8");QTimer.singleShot(50,application.quit)
 def main(argv=None):
     args=parse_args(argv)

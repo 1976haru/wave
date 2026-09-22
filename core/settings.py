@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PySide6.QtCore import QByteArray,QSettings
 class AppSettings:
-    KEYS=("last_audio_folder","last_output_folder","last_template","renderer_mode","quality","resolution","fps","ffmpeg_path","splitter_sizes")
+    KEYS=("last_audio_folder","last_output_folder","last_template","renderer_mode","quality","resolution","fps","ffmpeg_path","splitter_sizes","language","first_run_done","sleep_prevention","completion_action")
     def __init__(self,settings=None):self.settings=settings or QSettings("MusicWaveStudio","MusicWaveStudio")
     def get(self,key,default=None,type_=None):return self.settings.value(key,default,type=type_) if type_ else self.settings.value(key,default)
     def set(self,key,value):

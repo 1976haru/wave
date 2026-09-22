@@ -12,3 +12,4 @@ validation_results/
 !music_wave_studio.spec
 .venv312/
 analysis_comparison/
+queue_state.json
