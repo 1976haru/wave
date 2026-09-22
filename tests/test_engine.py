@@ -48,7 +48,7 @@ def test_attack_decay_and_band_weighting():
 
 def test_template_save_load_and_old_migration(tmp_path):
     migrated=migrate_template({"style":"dot","band_count":20,"barWidth":.4,"colour":"#123456"})
-    assert migrated["renderer"]=="dot" and migrated["bands"]==20 and migrated["version"]=="0.5"
+    assert migrated["renderer"]=="dot" and migrated["bands"]==20 and migrated["version"]=="0.5.1"
     path=tmp_path/"preset.json"; save_template(path,migrated); assert load_template(path)["color"]=="#123456"
 
 def test_true_alpha_cpu_renderer():
