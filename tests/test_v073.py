@@ -32,7 +32,7 @@ def test_automatic_output_reuses_existing_wave(window,tmp_path):
     audio=tmp_path/"a.wav";audio.write_bytes(b"x");window.audio_files=[str(audio)]; assert Path(window.ensure_output_dir())==tmp_path/"wave"; assert Path(window.ensure_output_dir()).is_dir()
 
 def test_progress_detail_updates_ui(window):
-    window.audio_files=["song.wav"]; window.render_detail({"percent":72,"track_index":1,"track_total":15,"set_index":2,"set_total":5,"fps":72.3}); assert window.song_progress.value()==72 and "?? 2 / 5" in window.status.text()
+    window.audio_files=["song.wav"]; window.render_detail({"percent":72,"track_index":1,"track_total":15,"set_index":2,"set_total":5,"fps":72.3}); assert window.song_progress.value()==72 and "?? 2 / 5" in window.progress_detail_label.text()
 
 def test_hidden_process_kwargs_is_windows_safe():
     from pipeline.exporter import _hidden_process_kwargs

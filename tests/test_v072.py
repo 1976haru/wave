@@ -25,7 +25,7 @@ def test_job_snapshot_contains_frozen_template_and_output(window,tmp_path):
     assert snapshot["output_dir"]==str(tmp_path.resolve()) and snapshot["template"]["name"]=="Tokyo Night" and snapshot["audio_files"]==["song.wav"]
 def test_step_buttons_are_clickable(window):
     assert all(isinstance(button,QPushButton) and button.isCheckable() for button in window.step_labels)
-    window.step_labels[3].click();assert window.current_step==3 and window.tabs.currentIndex()==4
+    window.step_labels[3].click();assert window.current_step==3 and window.left_tabs.currentIndex()==4
     window.step_labels[0].click();assert window.current_step==0
 def test_step_navigation_previous_and_next(window):
     for index in range(5):window.navigate_step(index);assert window.current_step==index

@@ -98,7 +98,7 @@ def test_korean_is_default():
     translator=Translator();assert translator.language=="ko" and translator.tr("step1").startswith("1.")
 
 def test_english_locale():
-    translator=Translator("en");assert translator.tr("step1")=="1. Select Audio"
+    translator=Translator("en");assert translator.tr("step1")=="1. Audio Folder"
 
 def test_locale_fallback():
     translator=Translator("xx");assert translator.language=="ko"
