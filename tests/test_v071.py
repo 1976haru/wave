@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 import pytest
 from PySide6.QtCore import QSettings
-from workflow.queue_manager import JobSet,QueueManager
-from workflow.sleep_prevention import SleepPrevention
+from mws_queue.queue_manager import JobSet,QueueManager
+from mws_queue.sleep_prevention import SleepPrevention
 from ui.locale import Translator,TRANSLATIONS
 
 def make_set(tmp_path,index=0):

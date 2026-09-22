@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PySide6.QtCore import Signal,Qt
 from PySide6.QtWidgets import QHBoxLayout,QInputDialog,QLabel,QMessageBox,QPushButton,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
-from workflow.queue_manager import QueueManager
+from mws_queue.queue_manager import QueueManager
 class QueuePanel(QWidget):
     startRequested=Signal()
     changed=Signal()

@@ -13,8 +13,8 @@ from core.storage import disk_warning
 from ui.locale import Translator,TRANSLATIONS
 from ui.queue_panel import QueuePanel
 from ui.simple_controls import SimpleControls
-from workflow.queue_manager import JobSet,QueueManager
-from workflow.sleep_prevention import SleepPrevention
+from mws_queue.queue_manager import JobSet,QueueManager
+from mws_queue.sleep_prevention import SleepPrevention
 from ui.playlist_panel import PlaylistPanel
 from animation.engine import AnimationEngine
 from pipeline.batch import BatchRunner
