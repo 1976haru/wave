@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+cache/*.npz
+output/
+dist/
+build/
+.pytest_cache/
+*.spec
