@@ -25,7 +25,18 @@ def packaged_smoke(window,application):
     shot_dir=Path(os.environ.get("MWS_SCREENSHOT_DIR",""));
     if shot_dir:
         shot_dir.mkdir(parents=True,exist_ok=True);window.grab().save(str(shot_dir/"gui_simple_korean.png"));window.left_tabs.setCurrentWidget(window.queue_panel);window.grab().save(str(shot_dir/"gui_queue_korean.png"))
-    target=Path(os.environ.get("MWS_SMOKE_REPORT",Path(tempfile.gettempdir())/"music_wave_smoke.json"));target.write_text(json.dumps(report,indent=2),encoding="utf-8");QTimer.singleShot(50,application.quit)
+    target=Path(os.environ.get("MWS_SMOKE_REPORT",Path(tempfile.gettempdir())/"music_wave_smoke.json"))
+    if os.environ.get("MWS_REFERENCE_SMOKE")=="1":
+        try:
+            import cv2,numpy as np
+            ref=Path(tempfile.gettempdir())/"mws_reference_smoke.jpg";cv2.imwrite(str(ref),np.zeros((240,320,3),np.uint8));window.reference_images=[str(ref)];window.analyze_reference_images()
+            def poll_reference():
+                if window.reference_worker is None:
+                    report.update({"reference_button":window.reference_analyze_button.text(),"reference_status":window.reference_status.text(),"reference_completed":window.reference_analyze_button.isEnabled()});target.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8");application.quit()
+                else:QTimer.singleShot(50,poll_reference)
+            QTimer.singleShot(50,poll_reference);return
+        except Exception as exc:report.update({"reference_status":"failed","reference_error":repr(exc)})
+    target.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8");QTimer.singleShot(50,application.quit)
 def main(argv=None):
     args=parse_args(argv)
     if args.headless:

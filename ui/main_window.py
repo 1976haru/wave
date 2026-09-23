@@ -40,12 +40,12 @@ class ReferenceAnalysisWorker(QObject):
         self.started.emit()
         try:
             if self.cancel_requested:self.cancelled.emit();return
-            self.stage_changed.emit("??? ???? ?",1,4)
-            self.stage_changed.emit("?? ?? ?? ?",2,4)
-            self.stage_changed.emit("??/?? ?? ?",3,4)
+            self.stage_changed.emit("\uc774\ubbf8\uc9c0 \ubd88\ub7ec\uc624\ub294 \uc911",1,4)
+            self.stage_changed.emit("\ud30c\ud615 \uc601\uc5ed \ucc3e\ub294 \uc911",2,4)
+            self.stage_changed.emit("\uc0c9\uc0c1\uacfc \ud615\ud0dc \ubd84\uc11d \uc911",3,4)
             result=analyze_images(self.paths,self.roi)
             if self.cancel_requested:self.cancelled.emit();return
-            self.stage_changed.emit("??? ??? ?",4,4);self.result_ready.emit(result)
+            self.stage_changed.emit("\ud30c\ud615 \uc2a4\ud0c0\uc77c \ub9cc\ub4dc\ub294 \uc911",4,4);self.result_ready.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
         finally:self.finished.emit()
     @Slot()
@@ -92,16 +92,16 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
+        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio v0.7.6");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());self.body_widget=QWidget();self.body_layout=QHBoxLayout(self.body_widget);layout.addWidget(self.body_widget,1);self.left_widget=self._left_panel();self.center_widget=self._center_panel();self.right_widget=self._right_panel();self.body_layout.addWidget(self.left_widget,2);self.body_layout.addWidget(self.center_widget,5);self.body_layout.addWidget(self.right_widget,3);self.progress_page=self._progress_page();self.body_layout.addWidget(self.progress_page,1);self.progress_page.hide();layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
     def _left_panel(self):
         tabs=QTabWidget();media=QWidget();m=QVBoxLayout(media);self.audio_list=QListWidget();m.addWidget(QLabel("Audio Files"));m.addWidget(self.audio_list);row_audio=QHBoxLayout();button=QPushButton("Add Audio");button.clicked.connect(self.add_audio);folder_button=QPushButton(self.translator.tr("add_folder"));folder_button.clicked.connect(self.add_folder);row_audio.addWidget(folder_button);row_audio.addWidget(button);m.addLayout(row_audio);tabs.addTab(media,"Media")
-        ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel("Reference Images (max 5)"));r.addWidget(self.ref_list);row=QHBoxLayout()
+        ref=QWidget();r=QVBoxLayout(ref);self.ref_list=QListWidget();r.addWidget(QLabel(self.translator.tr("reference_images")));r.addWidget(self.ref_list);row=QHBoxLayout()
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
-        r.addLayout(row);self.reference_analyze_button=QPushButton("?? ??? ??");self.reference_analyze_button.clicked.connect(self.analyze_reference_images);r.addWidget(self.reference_analyze_button);self.reference_cancel_button=QPushButton("?? ??");self.reference_cancel_button.clicked.connect(self.cancel_reference_analysis);self.reference_cancel_button.hide();r.addWidget(self.reference_cancel_button);self.reference_status=QLabel("?? ???? ????");r.addWidget(self.reference_status);roirow=QHBoxLayout();b=QPushButton("Draw ROI");b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton("Coordinate ROI");b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton("Reset ROI");b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel("No reference video");r.addWidget(self.video_label);b=QPushButton("Select 5–10s Video");b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton("Analyze Motion");b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
+        r.addLayout(row);self.reference_analyze_button=QPushButton(self.translator.tr("reference_analyze"));self.reference_analyze_button.clicked.connect(self.analyze_reference_images);r.addWidget(self.reference_analyze_button);self.reference_cancel_button=QPushButton(self.translator.tr("reference_cancel"));self.reference_cancel_button.clicked.connect(self.cancel_reference_analysis);self.reference_cancel_button.hide();r.addWidget(self.reference_cancel_button);self.reference_status=QLabel(self.translator.tr("reference_status"));r.addWidget(self.reference_status);roirow=QHBoxLayout();b=QPushButton(self.translator.tr("roi_draw"));b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_coordinate"));b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_reset"));b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel(self.translator.tr("no_video"));r.addWidget(self.video_label);b=QPushButton(self.translator.tr("select_video"));b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton(self.translator.tr("analyze_motion"));b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
         templates=QWidget();t=QVBoxLayout(templates);self.template_list=QListWidget();self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
     def _center_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
@@ -245,7 +245,7 @@ class MainWindow(QMainWindow):
         if row>=0:self.reference_images.pop(row);self.ref_list.takeItem(row)
     def clear_reference(self):self.reference_images.clear();self.ref_list.clear();self.roi=None
     def add_video(self):
-        path,_=QFileDialog.getOpenFileName(self,"Reference video","","Video (*.mp4 *.mov *.webm *.mkv)");self.reference_video=path or None;self.video_label.setText(Path(path).name if path else "No reference video")
+        path,_=QFileDialog.getOpenFileName(self,"Reference video","","Video (*.mp4 *.mov *.webm *.mkv)");self.reference_video=path or None;self.video_label.setText(Path(path).name if path else self.translator.tr("no_video"))
     def draw_roi(self):
         if not self.reference_images:return
         row=self.ref_list.currentRow();path=self.reference_images[row if row>=0 else 0];dialog=ROIDialog(path,self)
@@ -260,20 +260,20 @@ class MainWindow(QMainWindow):
             except Exception:self.roi=None;QMessageBox.warning(self,"ROI","Use x,y,width,height")
     def analyze_reference_images(self):
         if self.reference_thread and self.reference_thread.isRunning():
-            self.reference_status.setText("?? ?? ???? ???? ????.");return
+            self.reference_status.setText(self.translator.tr("reference_start_failed"));return
         if not self.reference_images:return
-        self.reference_analyze_button.setEnabled(False);self.reference_cancel_button.show();self.reference_status.setText("?? ?? ?? ?...")
-        self.reference_thread=QThread(self);self.reference_worker=ReferenceAnalysisWorker(list(self.reference_images),self.roi);self.reference_worker.moveToThread(self.reference_thread);self.reference_thread.started.connect(self.reference_worker.run);self.reference_worker.stage_changed.connect(lambda name,current,total:self.reference_status.setText(f"{current} / {total} {name}"));self.reference_worker.result_ready.connect(self.apply_reference);self.reference_worker.failed.connect(self.reference_analysis_failed);self.reference_worker.cancelled.connect(lambda:self.reference_status.setText("??? ???????."));self.reference_worker.finished.connect(self.reference_analysis_finished);self.reference_worker.finished.connect(self.reference_thread.quit);self.reference_thread.finished.connect(self.reference_worker.deleteLater);self.reference_thread.finished.connect(self.reference_thread.deleteLater);self.reference_thread.start()
+        self.reference_analyze_button.setEnabled(False);self.reference_cancel_button.show();self.reference_status.setText(self.translator.tr("reference_preparing"))
+        self.reference_thread=QThread(self);self.reference_worker=ReferenceAnalysisWorker(list(self.reference_images),self.roi);self.reference_worker.moveToThread(self.reference_thread);self.reference_thread.started.connect(self.reference_worker.run);self.reference_worker.stage_changed.connect(lambda name,current,total:self.reference_status.setText(f"{current} / {total} {name}"));self.reference_worker.result_ready.connect(self.apply_reference);self.reference_worker.failed.connect(self.reference_analysis_failed);self.reference_worker.cancelled.connect(lambda:self.reference_status.setText(self.translator.tr("reference_cancelled")));self.reference_worker.finished.connect(self.reference_analysis_finished);self.reference_worker.finished.connect(self.reference_thread.quit);self.reference_thread.finished.connect(self.reference_worker.deleteLater);self.reference_thread.finished.connect(self.reference_thread.deleteLater);self.reference_thread.start()
     def cancel_reference_analysis(self):
         if self.reference_worker:self.reference_worker.cancel()
     def reference_analysis_failed(self,message):
-        self.reference_status.setText("?? ??? ??? ??????.");self.status.setText("?? ??? ??? ??????.")
+        self.reference_status.setText(self.translator.tr("reference_failed"));self.status.setText(self.translator.tr("reference_failed"))
     def reference_analysis_finished(self):
         self.reference_analyze_button.setEnabled(True);self.reference_cancel_button.hide();self.reference_worker=None
     def analyze_motion(self):
         if self.reference_video:self.start_task("video",(self.reference_video,self.roi,10))
     def apply_reference(self,result):
-        before=copy.deepcopy(self.template);updated=copy.deepcopy(self.template);updated.update(result);self.template=updated;self.sync_controls();self.debounce.start();self.reference_status.setText("?? ?? ?? ??");self.navigate_step(2)
+        before=copy.deepcopy(self.template);updated=copy.deepcopy(self.template);updated.update(result);self.template=updated;self.sync_controls();self.debounce.start();self.reference_status.setText(self.translator.tr("reference_complete"));self.navigate_step(2)
     def refresh_templates(self):
         self.template_list.clear()
         values=np.abs(np.sin(np.linspace(0,np.pi*3,36)))*.8+.1

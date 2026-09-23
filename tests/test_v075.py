@@ -16,6 +16,14 @@ def test_locale_integrity(): assert check_locale()==[]
 def test_korean_folder_label(window):
     assert window.translator.tr("add_folder") != "??" and "\ufffd" not in window.translator.tr("add_folder")
 
+def test_reference_widget_labels_are_intact(window):
+    values=[window.reference_analyze_button.text(),window.reference_cancel_button.text(),window.reference_status.text(),window.video_label.text()]
+    assert all("??" not in value and "\ufffd" not in value for value in values)
+
+def test_reference_handler_starts_worker_attempt(window,tmp_path,monkeypatch):
+    monkeypatch.setattr("PySide6.QtCore.QThread.start",lambda self:None)
+    window.reference_images=[str(tmp_path/"missing.jpg")];window.analyze_reference_images();assert window.reference_worker is not None and not window.reference_analyze_button.isEnabled()
+
 def test_reference_worker_success(tmp_path):
     image=np.zeros((120,240,3),np.uint8);image[:,40:80]=(0,255,0);path=tmp_path/"ref.png";cv2.imwrite(str(path),image);worker=ReferenceAnalysisWorker([str(path)]);results=[];worker.result_ready.connect(results.append);worker.run();assert results and "color" in results[0]
 
