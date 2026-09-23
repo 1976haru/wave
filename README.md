@@ -94,6 +94,6 @@ See [PLAYLIST_STUDIO_HUB_INTEGRATION.md](PLAYLIST_STUDIO_HUB_INTEGRATION.md) for
 ## FFmpeg resolution
 
 Runtime lookup order is a user-selected FFmpeg path, an executable-adjacent bundled path (reserved for future packages), then system `PATH`. The Standard v0.7 build does not bundle FFmpeg. Python 3.12 64-bit is the official build target; 3.13 is supported when all wheels are available, while 3.14 is CPU-fallback only and not recommended.
-## v0.7.4 real queue and progress UI hotfix
+## v0.7.5 Korean labels and asynchronous reference analysis
 
 The default GUI language is Korean. The five-step path is audio selection, style, preview, export settings, and run. Advanced controls remain available behind Advanced Settings. Up to five job sets can be saved in queue_state.json, preflight-checked, reordered, resumed after restart, and processed sequentially while individual track/set failures are recorded and skipped. Rendering temporarily prevents Windows sleep when enabled. English is available from the language selector.
