@@ -89,6 +89,9 @@ in vec2 corner;in vec4 rect;in vec3 instance_color;uniform vec2 viewport;out vec
 void main(){uv=corner;vcolor=instance_color;vec2 p=rect.xy+(corner-.5)*rect.zw;gl_Position=vec4(p/viewport*2.0-1.0,0,1);}''',fragment_shader='''#version 330
 in vec2 uv;in vec3 vcolor;uniform float opacity;uniform int shape;uniform float roundness;out vec4 frag;
 void main(){float a=opacity;if(shape==1)a*=smoothstep(.52,.44,length(uv-.5));else if(roundness>0.0){vec2 q=abs(uv-.5)-vec2(.5-roundness*.45);a*=1.0-smoothstep(roundness*.44,roundness*.5,length(max(q,0.0)));}frag=vec4(vcolor,a);}''')
+        self.special_program=self.ctx.program(vertex_shader="""#version 330
+in vec2 position;in vec3 vertex_color;uniform vec2 viewport;out vec3 vcolor;void main(){vcolor=vertex_color;vec2 p=vec2(position.x,viewport.y-position.y);gl_Position=vec4(p/viewport*2.0-1.0,0,1);}""",fragment_shader="""#version 330
+in vec3 vcolor;uniform float opacity;out vec4 frag;void main(){frag=vec4(vcolor,opacity);}""")
         self.line_program=self.ctx.program(vertex_shader='''#version 330
 in vec2 position;in vec3 vertex_color;uniform vec2 viewport;out vec3 vcolor;
 void main(){vcolor=vertex_color;vec2 p=vec2(position.x,viewport.y-position.y);gl_Position=vec4(p/viewport*2.0-1.0,0,1);}''',fragment_shader='''#version 330
@@ -120,11 +123,27 @@ void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=ve
             vertices=build_line_vertices(w,h,values,t,mirror)
             if not len(vertices):continue
             buffer=self.ctx.buffer(vertices.tobytes());vao=self.ctx.vertex_array(self.line_program,[(buffer,"2f 3f","position","vertex_color")]);self.line_program["viewport"].value=(w,h);self.line_program["opacity"].value=float(t.get("opacity",1));vao.render(self.gl.TRIANGLE_STRIP);vao.release();buffer.release()
+    def _special_vertices(self,w,h,values,t,style):
+        x0,step,base,maximum,bw=_geometry(w,h,values,t); colors=gradient_colors(t,len(values)).astype(np.float32)/255; n=len(values)
+        if style=="ribbon":
+            xs=np.linspace(x0+step*.5,x0+step*(n-.5),n); smooth=np.convolve(np.r_[values[0],values,values[-1]],[.2,.6,.2],mode="same")[1:-1]; ys=base-smooth*maximum; pts=np.column_stack((xs,ys)).astype(np.float32); tangent=np.gradient(pts,axis=0); tangent/=np.maximum(np.linalg.norm(tangent,axis=1,keepdims=True),1e-6); normal=np.column_stack((-tangent[:,1],tangent[:,0])); half=np.maximum(2.0,float(t.get("bar_width",.55))*max(2,bw)*(.7+smooth*.8)); verts=[]
+            for i in range(n): verts.extend([(pts[i]+normal[i]*half[i]).tolist()+colors[i].tolist(),(pts[i]-normal[i]*half[i]).tolist()+colors[i].tolist()])
+            return np.asarray(verts,"f4"),self.gl.TRIANGLE_STRIP
+        center=np.array([w/2,h/2],np.float32); count=max(8,n); angles=np.linspace(-np.pi/2,1.5*np.pi,count,endpoint=False); vals=np.resize(values,count); inner=float(t.get("inner_radius",.18 if style=="ring" else .10))*min(w,h); scale=float(t.get("radial_scale",.32))*min(w,h)
+        if style=="radial":
+            radii=inner+vals*scale; pts=np.column_stack((center[0]+np.cos(angles)*radii,center[1]+np.sin(angles)*radii)); cols=np.resize(colors,(count,3)); return np.column_stack((pts,cols)).astype("f4"),self.gl.LINE_STRIP
+        verts=[]
+        for i,(ang,val) in enumerate(zip(angles,vals)):
+            p0=center+np.array([np.cos(ang)*inner,np.sin(ang)*inner]); p1=center+np.array([np.cos(ang)*(inner+val*scale),np.sin(ang)*(inner+val*scale)]); tangent=np.array([-np.sin(ang),np.cos(ang)]); half=max(1,float(t.get("bar_width",.55))*max(2,bw)/2); c=colors[i%len(colors)]; verts.extend([(p0+tangent*half).tolist()+c.tolist(),(p0-tangent*half).tolist()+c.tolist(),(p1+tangent*half).tolist()+c.tolist(),(p1-tangent*half).tolist()+c.tolist()])
+        return np.asarray(verts,"f4"),self.gl.TRIANGLE_STRIP
+    def _draw_special_gpu(self,w,h,values,t):
+        vertices,mode=self._special_vertices(w,h,values,t,str(t.get("renderer")).lower()); buf=self.ctx.buffer(vertices.tobytes()); vao=self.ctx.vertex_array(self.special_program,[(buf,"2f 3f","position","vertex_color")]); self.special_program["viewport"].value=(w,h); self.special_program["opacity"].value=float(t.get("opacity",1)); vao.render(mode); vao.release(); buf.release()
     def _gpu_glow(self,w,h,original,strength,radius):
         textures=[self.ctx.texture((w,h),4,dtype="f1") for _ in range(3)];fbos=[self.ctx.framebuffer([tex]) for tex in textures];original.use(0);self.blur_program["source"].value=0;fbos[0].use();self.blur_program["direction"].value=(max(1,radius)/w,0);self.blur_vao.render(self.gl.TRIANGLE_STRIP);textures[0].use(0);fbos[1].use();self.blur_program["direction"].value=(0,max(1,radius)/h);self.blur_vao.render(self.gl.TRIANGLE_STRIP);original.use(0);textures[1].use(1);fbos[2].use();self.composite_program["original"].value=0;self.composite_program["glow"].value=1;self.composite_program["strength"].value=float(strength);self.composite_vao.render(self.gl.TRIANGLE_STRIP);return textures,fbos,textures[2]
     def render_rgba(self,w,h,state,t):
         values=np.asarray(state["values"],"f4");base=self.ctx.texture((w,h),4,dtype="f1");base.filter=(self.gl.LINEAR,self.gl.LINEAR);fbo=self.ctx.framebuffer([base]);fbo.use();self.ctx.clear(0,0,0,0);self.ctx.enable(self.gl.BLEND);self.ctx.blend_func=(self.gl.SRC_ALPHA,self.gl.ONE_MINUS_SRC_ALPHA)
         if t.get("renderer")=="line":self._draw_line(w,h,values,t)
+        elif str(t.get("renderer")).lower() in {"ribbon","ring","radial"}: self._draw_special_gpu(w,h,values,t)
         else:self._draw_shapes(w,h,values,t)
         resources=[];output=base
         if t.get("glow"):
