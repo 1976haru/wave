@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import copy,time,datetime,os,subprocess,wave
 from pathlib import Path
 import numpy as np
-from PySide6.QtCore import QObject,QMetaObject,QThread,QTimer,QUrl,Signal,Slot,Qt
+from PySide6.QtCore import QObject,QMetaObject,QThread,QTimer,QUrl,QSize,Signal,Slot,Qt
 from PySide6.QtGui import QColor,QIcon,QImage,QPixmap
 from PySide6.QtMultimedia import QAudioOutput,QMediaPlayer
 from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
@@ -92,7 +92,7 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio v0.7.6");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
+        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio v0.7.8");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());self.body_widget=QWidget();self.body_layout=QHBoxLayout(self.body_widget);layout.addWidget(self.body_widget,1);self.left_widget=self._left_panel();self.center_widget=self._center_panel();self.right_widget=self._right_panel();self.body_layout.addWidget(self.left_widget,2);self.body_layout.addWidget(self.center_widget,5);self.body_layout.addWidget(self.right_widget,3);self.progress_page=self._progress_page();self.body_layout.addWidget(self.progress_page,1);self.progress_page.hide();layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         r.addLayout(row);self.reference_analyze_button=QPushButton(self.translator.tr("reference_analyze"));self.reference_analyze_button.clicked.connect(self.analyze_reference_images);r.addWidget(self.reference_analyze_button);self.reference_cancel_button=QPushButton(self.translator.tr("reference_cancel"));self.reference_cancel_button.clicked.connect(self.cancel_reference_analysis);self.reference_cancel_button.hide();r.addWidget(self.reference_cancel_button);self.reference_status=QLabel(self.translator.tr("reference_status"));r.addWidget(self.reference_status);roirow=QHBoxLayout();b=QPushButton(self.translator.tr("roi_draw"));b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_coordinate"));b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_reset"));b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel(self.translator.tr("no_video"));r.addWidget(self.video_label);b=QPushButton(self.translator.tr("select_video"));b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton(self.translator.tr("analyze_motion"));b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
-        templates=QWidget();t=QVBoxLayout(templates);self.template_list=QListWidget();self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
+        templates=QWidget();t=QVBoxLayout(templates);self.template_filter=QComboBox();self.template_filter.addItems(["\ucd94\ucc9c \uC2A4\ud0c0\uc77c","\uc804\uccb4 \uC2A4\ud0c0\uc77c","\uc2dc\ub2c8\uc5b4","Tokyo Chill","Jazz/Chanson","Modern"]);self.template_filter.currentTextChanged.connect(self.filter_templates);t.addWidget(self.template_filter);self.template_list=QListWidget();self.template_list.setViewMode(QListWidget.IconMode);self.template_list.setIconSize(QSize(180,72));self.template_list.setResizeMode(QListWidget.Adjust);self.template_list.setSpacing(8);self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
     def _center_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
         for text,fn in (("▶ Play",self.play),("Ⅱ Pause",self.pause),("■ Stop",self.stop)):
@@ -134,11 +134,11 @@ class MainWindow(QMainWindow):
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.bottom_actions=[];row=QHBoxLayout()
-        for text,fn in (("?? ??",self.analyze_audio),("?? ???",self.render),("???? ??",self.add_to_queue),("?? ?? ?? ??",self.start_queue),("?? ??",self.validate_tracks),("?? ??",self.system_check),("?? ??",self.cancel)):
+        for text,fn in (("음원 분석",self.analyze_audio),("지금 만들기",self.render),("대기열에 추가",self.add_to_queue),("예약 작업 모두 시작",self.start_queue),("음원 검사",self.validate_tracks),("환경 검사",self.system_check),("작업 중지",self.cancel)):
             b=QPushButton(text);b.clicked.connect(fn);b.hide();self.bottom_actions.append(b);row.addWidget(b)
-        v.addLayout(row);self.song_progress=QProgressBar();self.song_progress.setMinimumHeight(28);self.song_progress.setFormat("?? ? %p%") ;self.total_progress=QProgressBar();self.total_progress.setMinimumHeight(28);self.total_progress.setFormat("?? %p%") ;v.addWidget(self.song_progress);v.addWidget(self.total_progress);self.status=QLabel("???");self.performance=QLabel("Renderer: ? | Preview FPS: ? | Cache: ? | Analysis: ?");self.performance.hide();v.addWidget(self.status);v.addWidget(self.performance);return box
+        v.addLayout(row);self.song_progress=QProgressBar();self.song_progress.setMinimumHeight(28);self.song_progress.setFormat("\ucd98\uc7a5 %p%") ;self.total_progress=QProgressBar();self.total_progress.setMinimumHeight(28);self.total_progress.setFormat("\uc804\\ccb4 %p%") ;v.addWidget(self.song_progress);v.addWidget(self.total_progress);self.status=QLabel("\uc900\ube44\ub428");self.performance=QLabel("Renderer: ? | Preview FPS: ? | Cache: ? | Analysis: ?");self.performance.hide();v.addWidget(self.status);v.addWidget(self.performance);return box
     def _progress_page(self):
-        page=QWidget();v=QVBoxLayout(page);self.progress_title=QLabel("?? ??? ?");self.progress_title.setStyleSheet("font-size:28px;font-weight:bold");v.addWidget(self.progress_title);self.progress_detail_label=QLabel("?? ?? ?...");self.progress_detail_label.setStyleSheet("font-size:18px");v.addWidget(self.progress_detail_label);self.progress_elapsed=QLabel("?? ?? 00:00    ?? ? ?? ?? --:--    ?? ?? ?? --:--");v.addWidget(self.progress_elapsed);row=QHBoxLayout();skip=QPushButton("?? ? ????");stop=QPushButton("?? ?? ??");stop.clicked.connect(self.cancel);row.addWidget(skip);row.addWidget(stop);v.addLayout(row);return page
+        page=QWidget();v=QVBoxLayout(page);self.progress_title=QLabel("\uc601\uc0c1 \ub9cc\ub4dc\ub294 \uc911");self.progress_title.setStyleSheet("font-size:28px;font-weight:bold");v.addWidget(self.progress_title);self.progress_detail_label=QLabel("\uc791\uc5c5 \uc900\ube44 \uc911...");self.progress_detail_label.setStyleSheet("font-size:18px");v.addWidget(self.progress_detail_label);self.progress_elapsed=QLabel("경과 00:00    현재 곡 남은 시간 --:--    전체 남은 시간 --:--");v.addWidget(self.progress_elapsed);row=QHBoxLayout();skip=QPushButton("현재 곡 건너뛰기");stop=QPushButton("전체 작업 중지");stop.clicked.connect(self.cancel);row.addWidget(skip);row.addWidget(stop);v.addLayout(row);return page
     def _show_progress_page(self,visible=True):
         for widget in (self.left_widget,self.center_widget,self.right_widget):widget.setVisible(not visible)
         self.progress_page.setVisible(visible);self.performance.setVisible(False if visible else self.simple_controls.advanced.isChecked())
@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
             if answer==QMessageBox.Yes:self.start_queue()
             elif answer==QMessageBox.Cancel:self.queue_manager.clear();self.queue_panel.refresh()
     def _queue_completion(self,result):
-        self._show_progress_page(False);self.navigate_step(4);self.status.setText(f"?? ??? ???????. ?? {result.tracks_success}? / ?? {result.tracks_failed}?")
+        self._show_progress_page(False);self.navigate_step(4);self.status.setText(f"대기열 작업 완료. 성공 {result.tracks_success}곡 / 실패 {result.tracks_failed}곡")
     def _step_navigator(self):
         widget=QWidget();layout=QHBoxLayout(widget);self.step_labels=[]
         for index,key in enumerate(("step1","step2","step3","step4","step5")):
@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
         elif index==3:self.left_tabs.setCurrentIndex(4)
         else:self.left_tabs.setCurrentIndex(4)
     def _localize_existing(self):
-        pairs={"Media":"음원","Audio Files":"음원","Audio":"음악 반응","Reference":"참고 파형","Design":"디자인","Queue":"예약 작업","Playlist":"곡 목록","Templates":"파형 스타일","Effects":"효과","Export":"저장 설정","Add Audio":"음원 추가","Add Image":"이미지 추가","Remove":"삭제","Clear":"전체 지우기","Auto Analyze Images":"참고 이미지 분석","Draw ROI":"ROI 선택","Coordinate ROI":"ROI 좌표 입력","Reset ROI":"ROI 초기화","Analyze Motion":"움직임 분석","Save as My Template":"내 스타일로 저장","Play":"재생","Pause":"일시정지","Stop":"정지","Format":"출력 형식","Resolution":"해상도","FPS":"프레임 속도","Renderer":"렌더 방식","Quality":"품질","Ready":"준비됨"}
+        pairs={"Media":"음원","Audio Files":"음원","Audio":"음악 반응","Reference":"참고 파형","Design":"디자인","Queue":"예약 작업","Playlist":"곡 목록","Templates":"파형 스타일","Effects":"효과","Export":"저장 설정","Add Audio":"음원 추가","Add Image":"이미지 추가","Remove":"삭제","Clear":"전체 지우기","Auto Analyze Images":"참고 이미지 분석","Draw ROI":"ROI 선택","Coordinate ROI":"ROI 좌표 입력","Reset ROI":"ROI 초기화","Analyze Motion":"움직임 분석","Save as My Template":"내 스타일로 저장","Play":"재생","Pause":"일시정지","Stop":"정지","Format":"출력 형식","Resolution":"해상도","FPS":"프레임 속도","Renderer":"렌더 방식","Quality":"품질","Ready":"\uc900\ube44\ub428"}
         mapping=pairs if self.translator.language=="ko" else {value:key for key,value in pairs.items()}
         for widget in self.findChildren(QWidget):
             if hasattr(widget,"text") and callable(widget.text):
@@ -214,13 +214,13 @@ class MainWindow(QMainWindow):
         if bad:
             QMessageBox.warning(self,"실행 전 검사","일부 예약 작업을 시작할 수 없습니다. 예약 작업 탭에서 실행 전 검사 결과를 확인하세요.")
             return
-        self.navigate_step(4);self._show_progress_page(True);self.progress_title.setText("?? ??? ?");self.progress_detail_label.setText("?? ?? ?...");self.start_task("queue",(self.queue_manager,self.prevent_sleep.isChecked()));self.status.setText("FFmpeg ?? ?...")
+        self.navigate_step(4);self._show_progress_page(True);self.progress_title.setText("\uc601\uc0c1 \ub9cc\ub4dc\ub294 \uc911");self.progress_detail_label.setText("\uc791\uc5c5 \uc900\ube44 \uc911...");self.start_task("queue",(self.queue_manager,self.prevent_sleep.isChecked()));self.status.setText("FFmpeg \uc2dc\uc791 \uc911...")
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#11151C;color:#F4F7FA;font-size:13px}QGroupBox{border:1px solid #394657;border-radius:5px;margin-top:8px;padding-top:10px}QGroupBox::title{color:#F4F7FA}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox,QLineEdit{background:#222B37;color:#F4F7FA;border:1px solid #394657;padding:7px;border-radius:4px;min-height:24px}QPushButton:hover,QComboBox:hover{background:#2E4663;border-color:#4A90E2}QPushButton:pressed,QPushButton:checked{background:#4A90E2;color:white}QTabWidget::pane{background:#181E27;border:1px solid #394657}QTabBar::tab{background:#181E27;color:#B7C0CB;padding:10px 14px;min-height:20px}QTabBar::tab:selected{background:#4A90E2;color:#FFFFFF}QTabBar::tab:hover{background:#2E4663;color:#FFFFFF}QListWidget,QTableWidget{background:#181E27;color:#F4F7FA;border:1px solid #394657}QHeaderView::section{background:#222B37;color:#F4F7FA;padding:6px}QSlider::groove:horizontal{background:#394657;height:6px}QSlider::handle:horizontal{background:#4A90E2;width:14px;margin:-5px 0}QProgressBar{background:#222B37;color:#F4F7FA;border:1px solid #394657;text-align:center;min-height:28px;font-size:14px;font-weight:bold}QProgressBar::chunk{background:#4A90E2}QToolTip{background:#222B37;color:#F4F7FA;border:1px solid #4A90E2}")
     def _default_wave_dir(self):
         if not self.audio_files:return ""
         return str(Path(self.audio_files[0]).resolve().parent / "wave")
     def add_folder(self):
-        folder=QFileDialog.getExistingDirectory(self,"?? ?? ??")
+        folder=QFileDialog.getExistingDirectory(self,"음원 폴더 선택")
         if not folder:return False
         extensions={".wav",".mp3",".flac",".m4a",".aac",".ogg",".opus"}
         files=sorted((str(path) for path in Path(folder).iterdir() if path.is_file() and path.suffix.lower() in extensions),key=lambda value:Path(value).name.casefold())
@@ -230,7 +230,7 @@ class MainWindow(QMainWindow):
         percent=float(event.get("percent",0));self.song_progress.setValue(int(percent))
         track=event.get("track_index",1);track_total=event.get("track_total",len(self.audio_files) or 1);set_index=event.get("set_index",1);set_total=event.get("set_total",1);overall=((set_index-1)+(track-1+percent/100.0)/max(track_total,1))/max(set_total,1)*100.0;self.total_progress.setValue(int(max(0,min(100,overall))))
         name=Path(self.audio_files[track-1]).name if self.audio_files and 0<track<=len(self.audio_files) else ""
-        fps=float(event.get("fps",0));self.progress_detail_label.setText(f"?? {set_index} / {set_total}\n?? ? {track} / {track_total}\n{name}\n?? ? ??? {percent:.0f}%\n?? ?? {fps:.1f} fps");self.status.setText("?? ?? ?...")
+        fps=float(event.get("fps",0));self.progress_detail_label.setText(f"세트 {set_index} / {set_total}\n현재 곡 {track} / {track_total}\n{name}\n현재 곡 진행률 {percent:.0f}%\n렌더 속도 {fps:.1f} fps");self.status.setText("\ub80c\ub354 \uc9c4\ud589 \uc911...")
     def add_audio(self):
         files,_=QFileDialog.getOpenFileNames(self,"Audio files","","Audio (*.wav *.mp3 *.flac *.m4a *.ogg)");self.audio_files.extend(x for x in files if x not in self.audio_files);self.audio_list.clear();self.audio_list.addItems(self.audio_files)
         if self.audio_files:
@@ -275,10 +275,23 @@ class MainWindow(QMainWindow):
     def apply_reference(self,result):
         before=copy.deepcopy(self.template);updated=copy.deepcopy(self.template);updated.update(result);self.template=updated;self.sync_controls();self.debounce.start();self.reference_status.setText(self.translator.tr("reference_complete"));self.navigate_step(2)
     def refresh_templates(self):
-        self.template_list.clear()
-        values=np.abs(np.sin(np.linspace(0,np.pi*3,36)))*.8+.1
+        self.template_entries=[]
         for path,data in list_templates(resource_path("templates"),"my_templates"):
-            item=QListWidgetItem(data["name"]);item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
+            self.template_entries.append((path,data))
+        self.filter_templates(self.template_filter.currentText() if hasattr(self,"template_filter") else "\ucd94\ucc9c \uC2A4\ud0c0\uc77c")
+    def filter_templates(self,mode="전체 스타일"):
+        if not hasattr(self,"template_list"): return
+        self.template_list.clear()
+        recommended={"01_clean_bars","10_warm_cream_line","18_tokyo_neon","28_paris_thin_line","31_blue_jazz","42_glass_spectrum"}
+        for path,data in getattr(self,"template_entries",[]):
+            category=str(data.get("category","")).lower(); ident=str(data.get("id",path.stem))
+            if mode=="\ucd94\ucc9c \uC2A4\ud0c0\uc77c" and ident not in recommended: continue
+            if mode=="\uc2dc\ub2c8\uc5b4" and category!="senior": continue
+            if mode=="Tokyo Chill" and category!="tokyo_chill": continue
+            if mode=="Jazz/Chanson" and category!="jazz_chanson": continue
+            if mode=="Modern" and category!="modern": continue
+            label=data.get("name_ko",data.get("name_en",data.get("name","Style")))
+            item=QListWidgetItem(str(label));item.setToolTip(f"{data.get('name_en',data.get('name',''))} | {data.get('category','')}");item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
     def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start();self.navigate_step(2)
     def save_my_template(self):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
@@ -402,3 +415,4 @@ class MainWindow(QMainWindow):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
         if self.worker:self.worker.cancel();self.status.setText("Cancelling…")
+

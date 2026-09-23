@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 from core.ffmpeg_progress import FFmpegProgressParser
 from pipeline.exporter import build_ffmpeg_command, ExportOptions
@@ -32,7 +32,7 @@ def test_automatic_output_reuses_existing_wave(window,tmp_path):
     audio=tmp_path/"a.wav";audio.write_bytes(b"x");window.audio_files=[str(audio)]; assert Path(window.ensure_output_dir())==tmp_path/"wave"; assert Path(window.ensure_output_dir()).is_dir()
 
 def test_progress_detail_updates_ui(window):
-    window.audio_files=["song.wav"]; window.render_detail({"percent":72,"track_index":1,"track_total":15,"set_index":2,"set_total":5,"fps":72.3}); assert window.song_progress.value()==72 and "?? 2 / 5" in window.progress_detail_label.text()
+    window.audio_files=["song.wav"]; window.render_detail({"percent":72,"track_index":1,"track_total":15,"set_index":2,"set_total":5,"fps":72.3}); assert window.song_progress.value()==72 and "\uc138\ud2b8 2 / 5" in window.progress_detail_label.text()
 
 def test_hidden_process_kwargs_is_windows_safe():
     from pipeline.exporter import _hidden_process_kwargs
@@ -43,3 +43,4 @@ def test_wave_folder_does_not_delete_existing(window,tmp_path):
 
 def test_skip_completed_default(window):
     assert window.skip_completed.isChecked()
+

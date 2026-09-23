@@ -1,4 +1,4 @@
-import os
+﻿import os
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 from PySide6.QtWidgets import QApplication
 import pytest
@@ -18,7 +18,7 @@ def test_legacy_bottom_actions_hidden(window):
 
 def test_progress_bars_are_prominent(window):
     assert window.song_progress.minimumHeight()>=24 and window.total_progress.minimumHeight()>=24
-    assert "?? ?" in window.song_progress.format() and "??" in window.total_progress.format()
+    assert "%p%" in window.song_progress.format() and "%p%" in window.total_progress.format()
 
 def test_progress_page_has_stop_action(window):
     assert hasattr(window,"progress_page") and hasattr(window,"progress_detail_label")
@@ -34,3 +34,4 @@ def test_start_queue_switches_to_progress_page(window,monkeypatch):
 
 def test_progress_percent_label_updates(window):
     window.audio_files=["song.wav"];window.render_detail({"percent":50,"track_index":1,"track_total":1,"set_index":1,"set_total":1,"fps":74.2});assert window.song_progress.value()==50 and "50%" in window.progress_detail_label.text()
+
