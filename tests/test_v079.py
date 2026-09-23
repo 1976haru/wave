@@ -26,3 +26,14 @@ def test_showcase_thumbnails_are_visible():
     from PIL import Image
     for name in ("23_chill_ribbon.json","38_spectrum_ring.json","40_radial_wave.json"):
         image=np.asarray(Image.open(get_thumbnail(load_template(Path("templates")/name))[0])); assert image.shape[2]==4 and image[:,:,3].max()>0
+
+
+def test_flagship_line_and_ribbon_identity():
+    assert load_template('templates/10_warm_cream_line.json').get('renderer') == 'line'
+    assert load_template('templates/28_paris_thin_line.json').get('renderer') == 'line'
+    assert load_template('templates/23_chill_ribbon.json').get('renderer') == 'ribbon'
+
+def test_ribbon_has_filled_area_not_only_a_single_line():
+    image=CPURenderer().render_rgba(320,180,_state(),load_template('templates/23_chill_ribbon.json'))
+    assert (image[:,:,3]>0).sum() > 1000
+

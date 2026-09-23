@@ -61,10 +61,10 @@ class CPURenderer:
     def _draw_special(self, cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity):
         n=len(values); center=(w//2,h//2); mirror=bool(template.get("mirror")); thickness=max(1,int(template.get("bar_width",.55)*max(2,bw)))
         if style=="ribbon":
-            x0,step,_,_,_= _geometry(w,h,values,template); xs=np.linspace(x0+step*.5,x0+step*(n-.5),n); ys=base-values*maximum
-            pts=np.column_stack((xs,ys)).astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[pts],False,(255,255,255),thickness,cv2.LINE_AA); cv2.polylines(alpha,[pts],False,opacity,thickness,cv2.LINE_AA)
+            x0,step,_,_,_= _geometry(w,h,values,template); xs=np.linspace(x0+step*.5,x0+step*(n-.5),n); smooth=np.convolve(np.r_[values[0],values,values[-1]],[.2,.6,.2],mode="same")[1:-1]; ys=base-smooth*maximum
+            pts=np.column_stack((xs,ys)).astype(np.float32); tangent=np.gradient(pts,axis=0); tangent/=np.maximum(np.linalg.norm(tangent,axis=1,keepdims=True),1e-6); normal=np.column_stack((-tangent[:,1],tangent[:,0])); half=np.maximum(2.0,thickness*(.7+smooth*.8)); top=(pts+normal*half[:,None]).astype(np.int32); bottom=(pts-normal*half[:,None]).astype(np.int32); poly=np.vstack([top,bottom[::-1]]); cv2.fillPoly(rgb,[poly],(220,235,255)); cv2.fillPoly(alpha,[poly],opacity); cv2.polylines(rgb,[top.reshape((-1,1,2)),bottom.reshape((-1,1,2))],False,(255,255,255),1,cv2.LINE_AA)
             if mirror:
-                mp=np.column_stack((xs,2*base-ys)).astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[mp],False,(255,255,255),thickness,cv2.LINE_AA); cv2.polylines(alpha,[mp],False,opacity,thickness,cv2.LINE_AA)
+                mp=poly.copy(); mp[:,1]=2*base-mp[:,1]; cv2.fillPoly(rgb,[mp],(220,235,255)); cv2.fillPoly(alpha,[mp],opacity)
             return
         if style in {"ring","radial"}:
             count=max(8,n); angles=np.linspace(-np.pi/2,1.5*np.pi,count,endpoint=False); vals=np.resize(values,count); cx,cy=center; inner=float(template.get("inner_radius",.18 if style=="ring" else .12))*min(w,h); scale=float(template.get("radial_scale",.32))*min(w,h)
@@ -152,6 +152,9 @@ class RendererFactory:
         if choice=="AUTO":return AutoRenderer()
         if choice=="GPU":return GPUBarRenderer()
         return CPURenderer()
+
+
+
 
 
 

@@ -3,7 +3,7 @@ import copy,time,datetime,os,subprocess,wave
 from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QObject,QMetaObject,QThread,QTimer,QUrl,QSize,Signal,Slot,Qt
-from PySide6.QtGui import QColor,QIcon,QImage,QPixmap
+from PySide6.QtGui import QColor,QIcon,QImage,QPixmap,QFont,QFontDatabase
 from PySide6.QtMultimedia import QAudioOutput,QMediaPlayer
 from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
 from audio.analyzer import AnalysisSettings,analyze_file
@@ -92,7 +92,7 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__();self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio v0.7.8");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
+        super().__init__(); app=QApplication.instance(); families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Noto Sans","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10)); self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle("Music Wave Studio v0.8.0");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());self.body_widget=QWidget();self.body_layout=QHBoxLayout(self.body_widget);layout.addWidget(self.body_widget,1);self.left_widget=self._left_panel();self.center_widget=self._center_panel();self.right_widget=self._right_panel();self.body_layout.addWidget(self.left_widget,2);self.body_layout.addWidget(self.center_widget,5);self.body_layout.addWidget(self.right_widget,3);self.progress_page=self._progress_page();self.body_layout.addWidget(self.progress_page,1);self.progress_page.hide();layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
@@ -415,4 +415,7 @@ class MainWindow(QMainWindow):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
         if self.worker:self.worker.cancel();self.status.setText("Cancelling…")
+
+
+
 
