@@ -2,7 +2,7 @@
   "height": 0.35,
   "bass_weight": 1.05,
   "width": 0.55,
-  "renderer": "bars",
+  "renderer": "ring",
   "version": "0.5.1",
   "color": "#F75BCB",
   "mid_weight": 1,
@@ -31,5 +31,7 @@
   "recommended_genres": [],
   "gradient_start": "#F75BCB",
   "gradient_end": "#6BCBFF",
-  "glow_strength": 0.35
+  "glow_strength": 0.35,
+  "inner_radius": 0.16,
+  "radial_scale": 0.22
 }

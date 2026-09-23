@@ -43,9 +43,14 @@ def main(argv=None):
         result=_headless(args);print(json.dumps(result,ensure_ascii=False));return 0 if not result["failed"] else 2
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QFont, QFontDatabase
     from ui.main_window import MainWindow
-    app=QApplication(sys.argv[:1]);app.setApplicationName("Music Wave Studio");app.setOrganizationName("MusicWaveStudio");window=MainWindow();window.show()
+    app=QApplication(sys.argv[:1]); app.setApplicationName("Music Wave Studio"); app.setOrganizationName("MusicWaveStudio")
+    families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10))
+    window=MainWindow();window.show()
+
+
     if os.environ.get("MWS_SMOKE_TEST")=="1":QTimer.singleShot(0,lambda:packaged_smoke(window,app))
     return app.exec()
 if __name__=="__main__":raise SystemExit(main())
-

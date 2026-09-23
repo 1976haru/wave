@@ -20,7 +20,7 @@ def test_builtin_preset_metadata_and_unique_ids():
     for path, data in entries:
         ids.append(data.get("id", path.stem))
         assert data.get("name_en") or data.get("name")
-        assert data.get("renderer") in {"bars", "line", "dot"}
+        assert data.get("renderer") in {"bars", "line", "dot", "ribbon", "ring", "radial"}
         assert data.get("category", "legacy")
     assert len(ids) == len(set(ids))
 
@@ -45,5 +45,6 @@ def test_gallery_category_filter(qapp):
     window.template_filter.setCurrentText("Modern")
     assert window.template_list.count() >= 5
     window.close()
+
 
 

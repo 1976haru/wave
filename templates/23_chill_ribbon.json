@@ -2,7 +2,7 @@
   "height": 0.2,
   "bass_weight": 1.05,
   "width": 0.9,
-  "renderer": "bars",
+  "renderer": "ribbon",
   "version": "0.5.1",
   "color": "#7BE7FF",
   "mid_weight": 1,

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import numpy as np
 from functools import lru_cache
 from time import perf_counter
@@ -35,6 +35,8 @@ class CPURenderer:
         def bar(x,a,color,down=False):
             y1,y2=(base,min(h-1,base+a)) if down else (max(0,base-a),base);radius=int(min(bw/2,a/2)*np.clip(float(template.get("roundness",0)),0,1));cv2.rectangle(rgb,(x-bw//2,y1),(x+bw//2,y2),tuple(map(int,color)),-1,cv2.LINE_AA);cv2.rectangle(alpha,(x-bw//2,y1),(x+bw//2,y2),opacity,-1,cv2.LINE_AA)
             if radius:cy=y2 if down else y1;cv2.circle(rgb,(x,cy),bw//2,tuple(map(int,color)),-1,cv2.LINE_AA);cv2.circle(alpha,(x,cy),bw//2,opacity,-1,cv2.LINE_AA)
+        if style in {"ribbon","ring","radial"}:
+            self._draw_special(cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity)
         for i,value in enumerate(values):
             amplitude=max(1,int(float(value)*maximum));x=int(x0+(i+.5)*step);points.append((x,base-amplitude))
             if style=="bars":bar(x,amplitude,colors[i]);mirror and bar(x,amplitude,colors[i],True)
@@ -56,6 +58,19 @@ class CPURenderer:
             else:ga=cv2.GaussianBlur(alpha,(0,0),radius);gr=cv2.GaussianBlur(rgb,(0,0),radius)
             alpha=cv2.max(alpha,cv2.convertScaleAbs(ga,alpha=strength));rgb=cv2.addWeighted(rgb,1.0,gr,strength,0)
         glow_elapsed=perf_counter()-glow_started;final_started=perf_counter();result=np.dstack((rgb,alpha));final_elapsed=perf_counter()-final_started;self.last_profile={"setup_ms":setup_elapsed*1000,"allocation_ms":allocation_elapsed*1000,"draw_ms":draw_elapsed*1000,"glow_ms":glow_elapsed*1000,"final_copy_ms":final_elapsed*1000,"total_ms":(perf_counter()-total_started)*1000};return result
+    def _draw_special(self, cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity):
+        n=len(values); center=(w//2,h//2); mirror=bool(template.get("mirror")); thickness=max(1,int(template.get("bar_width",.55)*max(2,bw)))
+        if style=="ribbon":
+            x0,step,_,_,_= _geometry(w,h,values,template); xs=np.linspace(x0+step*.5,x0+step*(n-.5),n); ys=base-values*maximum
+            pts=np.column_stack((xs,ys)).astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[pts],False,(255,255,255),thickness,cv2.LINE_AA); cv2.polylines(alpha,[pts],False,opacity,thickness,cv2.LINE_AA)
+            if mirror:
+                mp=np.column_stack((xs,2*base-ys)).astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[mp],False,(255,255,255),thickness,cv2.LINE_AA); cv2.polylines(alpha,[mp],False,opacity,thickness,cv2.LINE_AA)
+            return
+        if style in {"ring","radial"}:
+            count=max(8,n); angles=np.linspace(-np.pi/2,1.5*np.pi,count,endpoint=False); vals=np.resize(values,count); cx,cy=center; inner=float(template.get("inner_radius",.18 if style=="ring" else .12))*min(w,h); scale=float(template.get("radial_scale",.32))*min(w,h)
+            for i,(ang,val) in enumerate(zip(angles,vals)):
+                r0=inner; r1=inner+max(2,float(val)*scale); x0=int(cx+np.cos(ang)*r0); y0=int(cy+np.sin(ang)*r0); x1=int(cx+np.cos(ang)*r1); y1=int(cy+np.sin(ang)*r1); col=tuple(map(int,colors[i%len(colors)])); cv2.line(rgb,(x0,y0),(x1,y1),col,thickness,cv2.LINE_AA); cv2.line(alpha,(x0,y0),(x1,y1),opacity,thickness,cv2.LINE_AA)
+            if style=="ring": cv2.circle(rgb,(cx,cy),max(1,int(inner)),(30,35,45),max(1,thickness//2),cv2.LINE_AA)
     def _numpy(self,w,h,state,t):
         out=np.zeros((h,w,4),np.uint8);values=np.asarray(state["values"]);x0,step,base,maximum,bw=_geometry(w,h,values,t);colors=gradient_colors(t,len(values));opacity=int(255*float(t.get("opacity",1)))
         for i,v in enumerate(values):
@@ -137,3 +152,7 @@ class RendererFactory:
         if choice=="AUTO":return AutoRenderer()
         if choice=="GPU":return GPUBarRenderer()
         return CPURenderer()
+
+
+
+
