@@ -20,7 +20,7 @@ def packaged_smoke(window,application):
         from render.renderer import RendererFactory
         from template_system import load_template
         from ui.roi_widget import ROIImageLabel
-        template=load_template(resource_path("templates/01_clean_bars.json"));reference=ROIImageLabel(resource_path("resources/smoke_reference.png"));sr=8000;samples=np.sin(2*np.pi*220*np.arange(sr)/sr).astype(np.float32);features=analyze_pcm(samples,sr,fps=24,bands=16,fft_size=512);state=AnimationEngine(features,template).sample(.25);image=RendererFactory.create("CPU").render_rgba(320,180,state,dict(template,glow=False)); special=load_template(resource_path("templates/23_chill_ribbon.json")); gpu_renderer=RendererFactory.create("AUTO"); special_image=gpu_renderer.render_rgba(320,180,state,special);window.template_filter.setCurrentIndex(1) if hasattr(window,"template_filter") else None; report={"status":"pass","templates":len(list(Path(resource_path("templates")).glob("*.json"))),"reference_image":not reference.original.isNull(),"audio_frames":len(features["spectrum"]),"preview_shape":list(image.shape),"preview_alpha":int(image[:,:,3].max()),"gpu_renderer":getattr(gpu_renderer,"name","unknown"),"gpu_special_alpha":int(special_image[:,:,3].max()),"ffmpeg":__import__("shutil").which("ffmpeg")}
+        template=load_template(resource_path("templates/01_clean_bars.json"));reference=ROIImageLabel(resource_path("resources/smoke_reference.png"));sr=8000;samples=np.sin(2*np.pi*220*np.arange(sr)/sr).astype(np.float32);features=analyze_pcm(samples,sr,fps=24,bands=16,fft_size=512);state=AnimationEngine(features,template).sample(.25);image=RendererFactory.create("CPU").render_rgba(320,180,state,dict(template,glow=False)); special=load_template(resource_path("templates/23_chill_ribbon.json")); gpu_renderer=RendererFactory.create("AUTO",special); special_image=gpu_renderer.render_rgba(320,180,state,special);window.template_filter.setCurrentIndex(1) if hasattr(window,"template_filter") else None; report={"status":"pass","templates":len(list(Path(resource_path("templates")).glob("*.json"))),"reference_image":not reference.original.isNull(),"audio_frames":len(features["spectrum"]),"preview_shape":list(image.shape),"preview_alpha":int(image[:,:,3].max()),"gpu_renderer":getattr(gpu_renderer,"name","unknown"),"gpu_special_alpha":int(special_image[:,:,3].max()),"ffmpeg":__import__("shutil").which("ffmpeg")}
     except Exception as exc:report={"status":"failed","error":repr(exc)}
     shot_dir=Path(os.environ.get("MWS_SCREENSHOT_DIR",""));
     if shot_dir:
@@ -54,4 +54,5 @@ def main(argv=None):
     if os.environ.get("MWS_SMOKE_TEST")=="1":QTimer.singleShot(0,lambda:packaged_smoke(window,app))
     return app.exec()
 if __name__=="__main__":raise SystemExit(main())
+
 

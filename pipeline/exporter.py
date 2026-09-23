@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import math,shutil,subprocess,os,threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +29,7 @@ def _hidden_process_kwargs():
     return {"stdin":subprocess.PIPE,"stderr":subprocess.PIPE,"creationflags":flags,"startupinfo":startup}
 
 def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print,progress_detail=None):
-    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
+    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer,render_template);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
     if not ffmpeg:raise RuntimeError("FFmpeg is required for video export")
     output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);total=max(1,math.ceil(duration*options.fps));started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(duration);stderr_lines=[]
     process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path),**_hidden_process_kwargs())
@@ -53,3 +53,4 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
         raise
     elapsed=perf_counter()-started;generation=animation_seconds+renderer_seconds;frame_generation_fps=total/max(generation,1e-9);average_fps=total/max(elapsed,1e-9);bottleneck="Encoder" if pipe_seconds+encode_wait_seconds>renderer_seconds else "Renderer";profile={"animation_seconds":animation_seconds,"renderer_seconds":renderer_seconds,"pipe_write_seconds":pipe_seconds,"encode_wait_seconds":encode_wait_seconds,"frame_generation_fps":frame_generation_fps,"average_fps":average_fps,"bottleneck":bottleneck}
     logger(f"render renderer={renderer.name} frames={total} total={elapsed:.3f}s generation_fps={frame_generation_fps:.2f} output_fps={average_fps:.2f} bottleneck={bottleneck} cache={'hit' if hit else 'miss'}");return {"output":str(output),"renderer":renderer.name,"cache_hit":hit,"frames":total,"seconds":elapsed,**profile}
+

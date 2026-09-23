@@ -2,7 +2,7 @@
   "height": 0.32,
   "bass_weight": 1.05,
   "width": 0.6,
-  "renderer": "ring",
+  "renderer": "radial",
   "version": "0.5.1",
   "color": "#FF8CC8",
   "mid_weight": 1,
@@ -32,6 +32,6 @@
   "gradient_start": "#FF8CC8",
   "gradient_end": "#7FE7FF",
   "glow_strength": 0.35,
-  "inner_radius": 0.16,
-  "radial_scale": 0.22
+  "inner_radius": 0.18,
+  "radial_scale": 0.24
 }

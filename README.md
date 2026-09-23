@@ -94,22 +94,27 @@ See [PLAYLIST_STUDIO_HUB_INTEGRATION.md](PLAYLIST_STUDIO_HUB_INTEGRATION.md) for
 ## FFmpeg resolution
 
 Runtime lookup order is a user-selected FFmpeg path, an executable-adjacent bundled path (reserved for future packages), then system `PATH`. The Standard v0.7 build does not bundle FFmpeg. Python 3.12 64-bit is the official build target; 3.13 is supported when all wheels are available, while 3.14 is CPU-fallback only and not recommended.
-## v0.8.1 packaged reference workflow and analysis progress
+## v0.8.2 packaged reference workflow and analysis progress
 
 The default GUI language is Korean. The five-step path is audio selection, style, preview, export settings, and run. Advanced controls remain available behind Advanced Settings. Up to five job sets can be saved in queue_state.json, preflight-checked, reordered, resumed after restart, and processed sequentially while individual track/set failures are recorded and skipped. Rendering temporarily prevents Windows sleep when enabled. English is available from the language selector.
 
-## v0.8.1 Built-in preset gallery
+## v0.8.2 Built-in preset gallery
 
 42개의 내장 파형 스타일과 카테고리별 thumbnail gallery를 제공합니다. 기본 workflow는 음원 폴더 → 스타일 → 미리보기 → 대기열 → 시작이며, 참고 이미지 분석은 고급 기능으로 유지됩니다.
 
 
-## v0.8.1 visual renderer upgrade
+## v0.8.2 visual renderer upgrade
 
 Ribbon, Ring, Radial geometry와 showcase thumbnail/contact sheet 검증 도구를 포함합니다.
 
 
 
-## v0.8.1 GPU shape renderer validation
+## v0.8.2 GPU shape renderer validation
 
 Ribbon/Ring/Radial의 ModernGL 경로와 CPU/GPU benchmark 도구를 포함합니다.
+
+
+## v0.8.2 adaptive renderer
+
+AUTO가 preset 조건별 CPU/GPU micro benchmark로 경로를 선택하고 성능 리포트를 기록합니다.
 

@@ -164,11 +164,35 @@ class AutoRenderer:
         try:return self.active.render_rgba(w,h,state,template)
         except Exception:
             self.active=self.cpu;self.name="CPU";return self.cpu.render_rgba(w,h,state,template)
+
+class AdaptiveRenderer:
+    """AUTO renderer: micro-benchmarks CPU/GPU for the requested geometry and caches the choice."""
+    def __init__(self, template=None):
+        self.template=dict(template or {"renderer":"bars","bands":64}); self.cpu=CPURenderer(); self.active=self.cpu; self.name="CPU"; self.profile={"renderer":str(self.template.get("renderer","bars"))}
+        try:
+            gpu=GPUBarRenderer(); values=np.abs(np.sin(np.linspace(0,9,64))).astype("f4")*.55+.2; state={"values":values}
+            import time
+            def measure(renderer):
+                start=time.perf_counter(); [renderer.render_rgba(320,180,state,self.template) for _ in range(2)]; return (time.perf_counter()-start)/2
+            cpu_ms=measure(self.cpu); gpu_ms=measure(gpu); self.profile.update({"cpu_ms":cpu_ms*1000,"gpu_ms":gpu_ms*1000});
+            if gpu_ms <= cpu_ms*1.15: self.active=gpu; self.name="GPU"
+        except Exception as exc:
+            self.profile["gpu_error"]=repr(exc)
+        self._save_profile()
+    def _save_profile(self):
+        try:
+            path=Path("cache/renderer_profile.json"); path.parent.mkdir(exist_ok=True); path.write_text(__import__("json").dumps(self.profile,indent=2),encoding="utf-8")
+        except Exception: pass
+    def render_rgba(self,w,h,state,template):
+        try:return self.active.render_rgba(w,h,state,template)
+        except Exception:
+            self.active=self.cpu; self.name="CPU"; return self.cpu.render_rgba(w,h,state,template)
+
 class RendererFactory:
     @staticmethod
-    def create(choice="AUTO"):
+    def create(choice="AUTO",template=None):
         choice=choice.upper()
-        if choice=="AUTO":return AutoRenderer()
+        if choice=="AUTO":return AdaptiveRenderer(template)
         if choice=="GPU":return GPUBarRenderer()
         return CPURenderer()
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from dataclasses import dataclass
 from time import perf_counter
 from audio.analyzer import AnalysisSettings, analyze_file
@@ -19,7 +19,7 @@ class PreviewEngine:
     @property
     def duration(self): return float(self.features["duration"][0]) if self.features is not None else 0.0
     def load(self,audio_path,template,cache_dir="cache"):
-        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_dir); self.renderer=RendererFactory.create(self.renderer_choice); self.animation=AnimationEngine(self.features,self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
+        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_dir); self.renderer=RendererFactory.create(self.renderer_choice,self.template); self.animation=AnimationEngine(self.features,self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
     def update_template(self,template):
         requested=int(template.get("bands",64)); current=int(self.features["spectrum"].shape[1]) if self.features is not None else requested; self.template=dict(template)
         if self.features is not None:
@@ -36,3 +36,4 @@ class PreviewEngine:
         seconds=max(0,min(float(seconds),self.duration));
         if seconds<self.last_time: self.animation.reset()
         started=perf_counter(); state=self.animation.sample(seconds); image=self.renderer.render_rgba(self.width,self.height,state,self.template); elapsed=perf_counter()-started; instant=1/max(elapsed,1e-6); self.metrics.fps=instant if not self.metrics.fps else self.metrics.fps*.8+instant*.2; self.last_time=seconds; return image
+

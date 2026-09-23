@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import threading,time
 from dataclasses import dataclass
 from PySide6.QtCore import QObject,QTimer,Signal,Slot
@@ -27,7 +27,7 @@ class PreviewRenderWorker(QObject):
     @Slot()
     def start(self):
         try:
-            self.engine=PreviewEngine(self.width,self.height,self.fps,self.renderer_choice);self.engine.features=self.features;self.engine.template=dict(self.template);from render.renderer import RendererFactory;from animation.engine import AnimationEngine;self.engine.renderer=RendererFactory.create(self.renderer_choice);self.engine.animation=AnimationEngine(self.features,self.template);self.engine.metrics.renderer=self.engine.renderer.name;self.running=True;self.timer=QTimer(self);self.timer.setInterval(1);self.timer.timeout.connect(self.process_latest);self.timer.start();self.ready.emit(self.engine.renderer.name)
+            self.engine=PreviewEngine(self.width,self.height,self.fps,self.renderer_choice);self.engine.features=self.features;self.engine.template=dict(self.template);from render.renderer import RendererFactory;from animation.engine import AnimationEngine;self.engine.renderer=RendererFactory.create(self.renderer_choice,self.engine.template);self.engine.animation=AnimationEngine(self.features,self.template);self.engine.metrics.renderer=self.engine.renderer.name;self.running=True;self.timer=QTimer(self);self.timer.setInterval(1);self.timer.timeout.connect(self.process_latest);self.timer.start();self.ready.emit(self.engine.renderer.name)
         except Exception as exc:self.failed.emit(str(exc));self.stopped.emit()
     @Slot()
     def process_latest(self):
@@ -42,3 +42,4 @@ class PreviewRenderWorker(QObject):
         self.running=False;self.mailbox.clear()
         if self.timer:self.timer.stop()
         self.stopped.emit()
+
