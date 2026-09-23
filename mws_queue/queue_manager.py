@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import copy,json,shutil,time,uuid
 from dataclasses import asdict,dataclass,field
 from pathlib import Path
@@ -41,7 +41,7 @@ class QueueResult:
 class QueueManager:
     max_sets=5
     def __init__(self,state_path="queue_state.json"):
-        self.state_path=Path(state_path);self.sets:list[JobSet]=[];self.running=False;self.cancel_requested=False;self.load()
+        self.state_path=Path(state_path);self.sets:list[JobSet]=[];self.running=False;self.cancel_requested=False;self.pause_requested=False;self.load()
     def add(self,job_set):
         if len(self.sets)>=self.max_sets:raise ValueError("최대 5개의 예약 작업만 추가할 수 있습니다.")
         if isinstance(job_set,dict):job_set=JobSet.from_dict(job_set)
@@ -84,7 +84,9 @@ class QueueManager:
             except OSError as exc:errors.append(str(exc))
             results.append({"id":item.id,"name":item.name,"ready":not errors,"errors":errors})
         return results
-    def request_cancel(self):self.cancel_requested=True
+    def request_cancel(self):self.cancel_requested=True;self.pause_requested=False
+    def request_pause(self):self.pause_requested=True
+    def resume(self):self.pause_requested=False
     def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None):
         started=time.perf_counter();self.running=True;self.cancel_requested=False;errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
         if sleep_guard:sleep_guard.__enter__()
@@ -113,3 +115,5 @@ class QueueManager:
             if sleep_guard:sleep_guard.__exit__(None,None,None)
             self.save()
         return QueueResult(len(self.sets),sets_success,sets_failed,tracks_success,tracks_failed,time.perf_counter()-started,errors)
+
+
