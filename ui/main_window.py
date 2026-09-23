@@ -21,6 +21,8 @@ from pipeline.batch import BatchRunner
 from pipeline.exporter import ExportOptions,output_extension
 from render_job import run_job,resolve_template
 from pipeline.exporter import render_audio
+from pipeline.segment_resume import ensure_manifest,SEGMENT_SECONDS
+from pipeline.segment_renderer import render_segmented_track
 from preview.engine import PreviewEngine,format_time
 from preview.scheduler import FrameScheduler
 from preview.worker import LatestFrameMailbox,PreviewRenderWorker
@@ -68,7 +70,9 @@ class TaskWorker(QObject):
             elif self.kind=="queue":
                 manager,sleep_enabled=self.payload
                 def render_track(track,job,progress_detail=None):
-                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(source.stem+output_extension(fmt)); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path"}}); return render_audio(source,target,template,options,progress_detail=progress_detail)
+                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(source.stem+output_extension(fmt)); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path"}});
+                    if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
+                    return render_audio(source,target,template,options,progress_detail=progress_detail)
                 self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled))
             self.done.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
@@ -222,7 +226,12 @@ class MainWindow(QMainWindow):
         out=self.ensure_output_dir()
         if not out:return False
         snapshot=self.build_current_job_snapshot();name=f"{datetime.date.today().isoformat()}_{snapshot['template'].get('name','Waveform')}"
-        job=JobSet(name=name,tracks=[{"audio":path,"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format,"duration":self._audio_duration(path)} for path in snapshot["audio_files"]],preset=snapshot["template"].get("name","01_clean_bars"),export={"format":snapshot["options"].format,"resolution":self.resolution.currentText(),"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"ffmpeg_path":snapshot["options"].ffmpeg_path},output_dir=out)
+        tracks=[]
+        export_settings={"format":snapshot["options"].format,"resolution":self.resolution.currentText(),"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"ffmpeg_path":snapshot["options"].ffmpeg_path}
+        for path in snapshot["audio_files"]:
+            duration=self._audio_duration(path); seg_root,manifest_path,manifest,_=ensure_manifest(out,path,duration,snapshot["options"].fps,{**export_settings,"preset_id":snapshot["template"].get("name","01_clean_bars"),"template":snapshot["template"]})
+            tracks.append({"audio":path,"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format,"duration":duration,"segment_root":str(seg_root),"segment_manifest":str(manifest_path),"segment_seconds":SEGMENT_SECONDS,"completed_segments":manifest.get("completed_segments",[]),"resume_settings":{"format":snapshot["options"].format,"resolution":self.resolution.currentText(),"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"preset_id":snapshot["template"].get("name","01_clean_bars"),"template":snapshot["template"]},"resume_seconds":(manifest.get("next_segment",0)*SEGMENT_SECONDS)})
+        job=JobSet(name=name,tracks=tracks,preset=snapshot["template"].get("name","01_clean_bars"),export=export_settings,output_dir=out)
         try:self.queue_manager.add(job);self.queue_panel.refresh();self.navigate_step(3);self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5");return True
         except ValueError as exc:QMessageBox.warning(self,"예약 작업",str(exc));return False
     def start_queue(self):
@@ -432,11 +441,4 @@ class MainWindow(QMainWindow):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
         if self.worker:self.worker.cancel();self.status.setText("Cancelling…")
-
-
-
-
-
-
-
 

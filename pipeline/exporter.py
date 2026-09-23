@@ -17,8 +17,13 @@ class ExportOptions:
     def from_resolution(cls,resolution="1920x1080",**kwargs):
         width,height=RESOLUTIONS.get(resolution,(kwargs.pop("width",1920),kwargs.pop("height",1080)));return cls(width=width,height=height,**kwargs)
 def output_extension(format_name):return {"mp4":".mp4","webm":".webm","mov":".mov"}[format_name.lower()]
-def build_ffmpeg_command(ffmpeg,output,options,audio):
-    preset=PRESETS[options.quality];common=[ffmpeg,"-y","-v","error","-f","rawvideo","-pix_fmt","rgba","-s",f"{options.width}x{options.height}","-r",str(options.fps),"-i","pipe:0","-i",str(audio),"-shortest"];suffix=Path(output).suffix.lower()
+def build_ffmpeg_command(ffmpeg,output,options,audio,audio_start=0.0,audio_duration=None):
+    preset=PRESETS[options.quality];common=[ffmpeg,"-y","-v","error","-f","rawvideo","-pix_fmt","rgba","-s",f"{options.width}x{options.height}","-r",str(options.fps),"-i","pipe:0"]
+    audio_input=[]
+    if audio_start>0: audio_input += ["-ss",f"{audio_start:.6f}"]
+    audio_input += ["-i",str(audio)]
+    if audio_duration is not None: audio_input += ["-t",f"{audio_duration:.6f}"]
+    common += audio_input + ["-shortest"];suffix=Path(output).suffix.lower()
     if suffix==".webm":return common+["-progress","pipe:2","-nostats","-c:v","libvpx-vp9","-pix_fmt","yuva420p","-auto-alt-ref","0","-deadline","realtime" if options.quality=="PREVIEW" else "good","-c:a","libopus",str(output)]
     if suffix==".mov":return common+["-progress","pipe:2","-nostats","-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le","-c:a","pcm_s16le",str(output)]
     return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(preset["crf"]),"-c:a","aac",str(output)]
@@ -28,11 +33,11 @@ def _hidden_process_kwargs():
     startup=subprocess.STARTUPINFO(); startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW; startup.wShowWindow=0
     return {"stdin":subprocess.PIPE,"stderr":subprocess.PIPE,"creationflags":flags,"startupinfo":startup}
 
-def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print,progress_detail=None):
+def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print,progress_detail=None,start_frame=0,end_frame=None):
     options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer,render_template);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
     if not ffmpeg:raise RuntimeError("FFmpeg is required for video export")
-    output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);total=max(1,math.ceil(duration*options.fps));started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(duration);stderr_lines=[]
-    process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path),**_hidden_process_kwargs())
+    output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);full_total=max(1,math.ceil(duration*options.fps));start_frame=max(0,int(start_frame));end_frame=full_total-1 if end_frame is None else min(full_total-1,int(end_frame));total=max(1,end_frame-start_frame+1);segment_start=start_frame/options.fps;segment_duration=total/options.fps;started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(segment_duration);stderr_lines=[]
+    process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path,segment_start,segment_duration),**_hidden_process_kwargs())
     def read_progress():
         for raw in iter(process.stderr.readline,b""):
             line=raw.decode("utf-8","replace").strip(); stderr_lines.append(line)
@@ -40,12 +45,12 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
             if event and progress_detail: progress_detail(event)
     reader=threading.Thread(target=read_progress,daemon=True);reader.start()
     try:
-        for frame_index in range(total):
+        for local_frame in range(total):
             if cancel and cancel():raise InterruptedError("Render cancelled")
-            mark=perf_counter();state=engine.sample(frame_index/options.fps);animation_seconds+=perf_counter()-mark;mark=perf_counter();frame=renderer.render_rgba(options.width,options.height,state,render_template);renderer_seconds+=perf_counter()-mark;mark=perf_counter();process.stdin.write(memoryview(frame));pipe_seconds+=perf_counter()-mark
+            mark=perf_counter();state=engine.sample((start_frame+local_frame)/options.fps);animation_seconds+=perf_counter()-mark;mark=perf_counter();frame=renderer.render_rgba(options.width,options.height,state,render_template);renderer_seconds+=perf_counter()-mark;mark=perf_counter();process.stdin.write(memoryview(frame));pipe_seconds+=perf_counter()-mark
         process.stdin.close();mark=perf_counter();code=process.wait();encode_wait_seconds=perf_counter()-mark;reader.join(timeout=2)
         if code:raise RuntimeError(f"FFmpeg exited with code {code}: {" | ".join(stderr_lines[-5:])}")
-        if progress_detail: progress_detail({"percent":100.0,"out_time":duration,"frame":total,"fps":total/max(perf_counter()-started,1e-9),"done":True})
+        if progress_detail: progress_detail({"percent":100.0,"out_time":segment_start+segment_duration,"frame":start_frame+total,"fps":total/max(perf_counter()-started,1e-9),"done":True})
     except BaseException:
         if process.stdin and not process.stdin.closed:process.stdin.close()
         process.terminate();process.wait();reader.join(timeout=1)

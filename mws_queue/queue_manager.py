@@ -2,6 +2,7 @@
 import copy,json,shutil,time,uuid
 from dataclasses import asdict,dataclass,field
 from pathlib import Path
+from pipeline.segment_resume import recover_manifest
 @dataclass
 class JobSet:
     name:str
@@ -115,5 +116,4 @@ class QueueManager:
             if sleep_guard:sleep_guard.__exit__(None,None,None)
             self.save()
         return QueueResult(len(self.sets),sets_success,sets_failed,tracks_success,tracks_failed,time.perf_counter()-started,errors)
-
 
