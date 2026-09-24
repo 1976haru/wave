@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import math,shutil,subprocess,os,threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +12,7 @@ from render.quality import PRESETS
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
 @dataclass
 class ExportOptions:
-    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None
+    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None;canvas_mode:str="full"
     @classmethod
     def from_resolution(cls,resolution="1920x1080",**kwargs):
         width,height=RESOLUTIONS.get(resolution,(kwargs.pop("width",1920),kwargs.pop("height",1080)));return cls(width=width,height=height,**kwargs)
@@ -58,4 +58,3 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
         raise
     elapsed=perf_counter()-started;generation=animation_seconds+renderer_seconds;frame_generation_fps=total/max(generation,1e-9);average_fps=total/max(elapsed,1e-9);bottleneck="Encoder" if pipe_seconds+encode_wait_seconds>renderer_seconds else "Renderer";profile={"animation_seconds":animation_seconds,"renderer_seconds":renderer_seconds,"pipe_write_seconds":pipe_seconds,"encode_wait_seconds":encode_wait_seconds,"frame_generation_fps":frame_generation_fps,"average_fps":average_fps,"bottleneck":bottleneck}
     logger(f"render renderer={renderer.name} frames={total} total={elapsed:.3f}s generation_fps={frame_generation_fps:.2f} output_fps={average_fps:.2f} bottleneck={bottleneck} cache={'hit' if hit else 'miss'}");return {"output":str(output),"renderer":renderer.name,"cache_hit":hit,"frames":total,"seconds":elapsed,**profile}
-

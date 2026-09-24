@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import subprocess
 from pathlib import Path
 from pipeline.segment_resume import recover_manifest, checkpoint, plan_segments, atomic_write_json
@@ -12,7 +12,7 @@ def _hidden(ffmpeg):
 
 def render_segmented_track(source,target,template,options,manifest_path,segment_root,progress_detail=None,cancel=None):
     source=Path(source); target=Path(target); root=Path(segment_root); root.mkdir(parents=True,exist_ok=True)
-    manifest=recover_manifest(manifest_path,{"format":options.format,"resolution":f"{options.width}x{options.height}","fps":options.fps,"quality":options.quality,"renderer":options.renderer,"ffmpeg_path":options.ffmpeg_path,"preset_id":template.get("name",""),"template":template},root)
+    manifest=recover_manifest(manifest_path,{"format":options.format,"resolution":f"{options.width}x{options.height}","fps":options.fps,"quality":options.quality,"renderer":options.renderer,"ffmpeg_path":options.ffmpeg_path,"width":options.width,"height":options.height,"canvas_mode":options.canvas_mode,"preset_id":template.get("name",""),"template":template},root)
     if manifest is None or manifest.get("incompatible"):
         raise RuntimeError("파형 또는 출력 설정이 변경되어 현재 곡은 처음부터 다시 만듭니다.")
     segments=plan_segments(manifest["track_duration"],options.fps)
@@ -29,7 +29,7 @@ def render_segmented_track(source,target,template,options,manifest_path,segment_
         render_audio(source,tmp,template,options,progress_detail=detail,cancel=cancel,start_frame=seg.start_frame,end_frame=seg.end_frame)
         tmp.replace(seg_path)
         checkpoint(manifest_path,manifest,seg.index,root)
-        manifest=recover_manifest(manifest_path,{"format":options.format,"resolution":f"{options.width}x{options.height}","fps":options.fps,"quality":options.quality,"renderer":options.renderer,"ffmpeg_path":options.ffmpeg_path,"preset_id":template.get("name",""),"template":template},root) or manifest
+        manifest=recover_manifest(manifest_path,{"format":options.format,"resolution":f"{options.width}x{options.height}","fps":options.fps,"quality":options.quality,"renderer":options.renderer,"ffmpeg_path":options.ffmpeg_path,"width":options.width,"height":options.height,"canvas_mode":options.canvas_mode,"preset_id":template.get("name",""),"template":template},root) or manifest
     if len(manifest.get('completed_segments',[])) < total: raise RuntimeError('segment checkpoint incomplete')
     if target.suffix.lower()=='.webm':
         ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
@@ -44,4 +44,3 @@ def render_segmented_track(source,target,template,options,manifest_path,segment_
         raise RuntimeError('segment resume currently requires WebM output')
     manifest['status']='completed'; manifest['next_segment']=total; atomic_write_json(manifest_path,manifest)
     return {'output':str(target),'resume_seconds':0.0,'completed_segments':list(range(total)),'segment_count':total}
-
