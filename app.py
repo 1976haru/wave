@@ -1,5 +1,6 @@
 ﻿import argparse,json,os,sys,tempfile
 from pathlib import Path
+from core.version import get_version,build_info
 def parse_args(argv=None):
     parser=argparse.ArgumentParser(add_help=True);parser.add_argument("--headless",action="store_true");parser.add_argument("--job");parser.add_argument("--audio");parser.add_argument("--preset",default="01_clean_bars");parser.add_argument("--output");parser.add_argument("--format",default="webm",choices=["mp4","webm","mov"]);return parser.parse_args(argv)
 def _headless(args):
@@ -11,7 +12,7 @@ def _headless(args):
     return run_job(job)
 def packaged_smoke(window,application):
     from PySide6.QtCore import QTimer
-    report={"status":"failed"}
+    report={"status":"failed","version":get_version(),"build_info":build_info()}
     try:
         import numpy as np
         from audio.analyzer import analyze_pcm
@@ -20,8 +21,19 @@ def packaged_smoke(window,application):
         from render.renderer import RendererFactory
         from template_system import load_template
         from ui.roi_widget import ROIImageLabel
-        template=load_template(resource_path("templates/01_clean_bars.json"));reference=ROIImageLabel(resource_path("resources/smoke_reference.png"));sr=8000;samples=np.sin(2*np.pi*220*np.arange(sr)/sr).astype(np.float32);features=analyze_pcm(samples,sr,fps=24,bands=16,fft_size=512);state=AnimationEngine(features,template).sample(.25);image=RendererFactory.create("CPU").render_rgba(320,180,state,dict(template,glow=False)); special=load_template(resource_path("templates/23_chill_ribbon.json")); gpu_renderer=RendererFactory.create("AUTO",special); special_image=gpu_renderer.render_rgba(320,180,state,special);window.template_filter.setCurrentIndex(1) if hasattr(window,"template_filter") else None; report={"status":"pass","templates":len(list(Path(resource_path("templates")).glob("*.json"))),"reference_image":not reference.original.isNull(),"audio_frames":len(features["spectrum"]),"preview_shape":list(image.shape),"preview_alpha":int(image[:,:,3].max()),"gpu_renderer":getattr(gpu_renderer,"name","unknown"),"gpu_special_alpha":int(special_image[:,:,3].max()),"ffmpeg":__import__("shutil").which("ffmpeg")}
+        template=load_template(resource_path("templates/01_clean_bars.json"));reference=ROIImageLabel(resource_path("resources/smoke_reference.png"));sr=8000;samples=np.sin(2*np.pi*220*np.arange(sr)/sr).astype(np.float32);features=analyze_pcm(samples,sr,fps=24,bands=16,fft_size=512);state=AnimationEngine(features,template).sample(.25);image=RendererFactory.create("CPU").render_rgba(320,180,state,dict(template,glow=False)); special=load_template(resource_path("templates/23_chill_ribbon.json")); gpu_renderer=RendererFactory.create("AUTO",special); special_image=gpu_renderer.render_rgba(320,180,state,special);window.template_filter.setCurrentIndex(1) if hasattr(window,"template_filter") else None; report={"status":"pass","version":get_version(),"build_info":build_info(),"templates":len(list(Path(resource_path("templates")).glob("*.json"))),"reference_image":not reference.original.isNull(),"audio_frames":len(features["spectrum"]),"preview_shape":list(image.shape),"preview_alpha":int(image[:,:,3].max()),"gpu_renderer":getattr(gpu_renderer,"name","unknown"),"gpu_special_alpha":int(special_image[:,:,3].max()),"ffmpeg":__import__("shutil").which("ffmpeg")}
     except Exception as exc:report={"status":"failed","error":repr(exc)}
+    if os.environ.get("MWS_QUEUE_SMOKE")=="1":
+        try:
+            import wave
+            from mws_queue.queue_manager import QueueManager
+            smoke_root=Path(tempfile.gettempdir())/"mws_queue_smoke_v0823"; smoke_root.mkdir(parents=True,exist_ok=True)
+            wav=smoke_root/"smoke.wav"
+            with wave.open(str(wav),"wb") as handle:
+                handle.setnchannels(1); handle.setsampwidth(2); handle.setframerate(8000); handle.writeframes((np.zeros(8000,dtype=np.int16)).tobytes())
+            window.queue_manager.state_path=smoke_root/"queue_state.json"; window.queue_manager.sets=[]; window.audio_files=[str(wav)]; window.audio_list.clear(); window.audio_list.addItem(wav.name); window.set_output_dir(str(smoke_root/"wave")); window.navigate_step(3); window.queue_panel.add_button.click(); application.processEvents()
+            report.update({"queue_add_clicked":True,"queue_count":len(window.queue_manager.sets),"queue_card_visible":len(window.queue_manager.sets)==1,"queue_step":window.current_step,"queue_start_enabled":window.primary_action.isEnabled()})
+        except Exception as exc: report.update({"queue_add_clicked":False,"queue_error":repr(exc)})
     shot_dir=Path(os.environ.get("MWS_SCREENSHOT_DIR",""));
     if shot_dir:
         shot_dir.mkdir(parents=True,exist_ok=True);window.grab().save(str(shot_dir/"gui_simple_korean.png"));window.left_tabs.setCurrentWidget(window.queue_panel);window.grab().save(str(shot_dir/"gui_queue_korean.png"))
@@ -46,7 +58,7 @@ def main(argv=None):
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFont, QFontDatabase
     from ui.main_window import MainWindow
-    app=QApplication(sys.argv[:1]); app.setApplicationName("Music Wave Studio"); app.setOrganizationName("MusicWaveStudio")
+    app=QApplication(sys.argv[:1]); app.setApplicationName(f"Music Wave Studio v{get_version()}"); app.setOrganizationName("MusicWaveStudio")
     families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10))
     window=MainWindow();window.show()
 
@@ -54,5 +66,4 @@ def main(argv=None):
     if os.environ.get("MWS_SMOKE_TEST")=="1":QTimer.singleShot(0,lambda:packaged_smoke(window,app))
     return app.exec()
 if __name__=="__main__":raise SystemExit(main())
-
 
