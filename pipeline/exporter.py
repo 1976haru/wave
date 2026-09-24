@@ -12,7 +12,7 @@ from render.quality import PRESETS
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
 @dataclass
 class ExportOptions:
-    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None;canvas_mode:str="full"
+    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None;canvas_mode:str="full";video_codec:str="auto";include_audio:bool=True
     @classmethod
     def from_resolution(cls,resolution="1920x1080",**kwargs):
         width,height=RESOLUTIONS.get(resolution,(kwargs.pop("width",1920),kwargs.pop("height",1080)));return cls(width=width,height=height,**kwargs)
@@ -23,10 +23,23 @@ def build_ffmpeg_command(ffmpeg,output,options,audio,audio_start=0.0,audio_durat
     if audio_start>0: audio_input += ["-ss",f"{audio_start:.6f}"]
     audio_input += ["-i",str(audio)]
     if audio_duration is not None: audio_input += ["-t",f"{audio_duration:.6f}"]
-    common += audio_input + ["-shortest"];suffix=Path(output).suffix.lower()
-    if suffix==".webm":return common+["-progress","pipe:2","-nostats","-c:v","libvpx-vp9","-pix_fmt","yuva420p","-auto-alt-ref","0","-deadline","realtime" if options.quality=="PREVIEW" else "good","-c:a","libopus",str(output)]
-    if suffix==".mov":return common+["-progress","pipe:2","-nostats","-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le","-c:a","pcm_s16le",str(output)]
-    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(preset["crf"]),"-c:a","aac",str(output)]
+    if options.include_audio:
+        common += audio_input + ["-shortest"]
+    suffix=Path(output).suffix.lower()
+    if suffix==".webm":
+        fast=options.video_codec.lower() in {"vp9_fast","fast"}
+        enc=["-c:v","libvpx-vp9","-pix_fmt","yuva420p","-auto-alt-ref","0"]
+        enc += ["-deadline","realtime","-cpu-used","7","-row-mt","1","-threads","8","-tile-columns","2"] if fast else ["-deadline","realtime" if options.quality=="PREVIEW" else "good"]
+        enc += (["-c:a","libopus"] if options.include_audio else [])
+        return common+["-progress","pipe:2","-nostats"]+enc+[str(output)]
+    if suffix==".mov":
+        codec=options.video_codec.lower()
+        if codec in {"qtrle","animation"}: enc=["-c:v","qtrle","-pix_fmt","argb"]
+        elif codec in {"png","png_mov"}: enc=["-c:v","png","-pix_fmt","rgba"]
+        else: enc=["-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le"]
+        if options.include_audio: enc += ["-c:a","pcm_s16le"]
+        return common+["-progress","pipe:2","-nostats"]+enc+[str(output)]
+    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(preset["crf"])] + (["-c:a","aac"] if options.include_audio else []) + [str(output)]
 def _hidden_process_kwargs():
     if os.name != "nt": return {"stdin": subprocess.PIPE, "stderr": subprocess.PIPE}
     flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
