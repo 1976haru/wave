@@ -14,6 +14,23 @@ class AnimationEngine:
             values[positions] *= max(0.0, weight) * (0.65 + 0.35 * signal)
         values *= float(self.t.get("response", 1.25)) * (0.7 + 0.3 * float(self.f["rms"][i]))
         values += float(self.f["onset"][i]) * float(self.t.get("onset_boost", 0.1))
+        # Signature modes use a perceptual six-zone curve.  It deliberately
+        # favours bass/low-mid content and keeps hi-hats from turning the calm
+        # dotted baseline into a conventional full-height EQ.
+        if str(self.t.get("renderer", "")).lower() in {"dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots"}:
+            zone_weights = np.asarray(self.t.get("frequency_weights", [.85, 1.15, 1.10, .90, .70, .55]), np.float32)
+            for positions, weight in zip(np.array_split(np.arange(len(values)), len(zone_weights)), zone_weights):
+                values[positions] *= weight
+            floor = np.clip(float(self.t.get("dot_floor", .07)), 0, .25)
+            compression = max(.35, float(self.t.get("soft_compression", .72)))
+            values = floor + (1.0-floor) * np.power(np.clip(values, 0, 1), compression)
+            if self.t.get("sparse_columns"):
+                # Stable, frequency-derived pillars: never random and identical
+                # in preview/export for the same feature frame.
+                rank = np.argsort(values)
+                keep = np.zeros(len(values), np.float32)
+                keep[rank[-max(3, len(values)//5):]] = 1.0
+                values *= .28 + .72*keep
         smoothing = np.clip(float(self.t.get("smoothing", 0.15)), 0, .95)
         if len(values) > 2 and smoothing:
             values = (1-smoothing)*values + smoothing*np.convolve(values, [.25,.5,.25], mode="same")
@@ -22,4 +39,4 @@ class AnimationEngine:
         else:
             retain = np.where(values > self.prev, np.clip(float(self.t.get("attack", .5)),0,1), np.clip(float(self.t.get("decay", .9)),0,1))
             self.prev = retain*self.prev + (1-retain)*values
-        return {"values": self.prev.copy(), "bass": signals[0], "mid": signals[1], "high": signals[2], "onset": float(self.f["onset"][i])}
+        return {"values": self.prev.copy(), "bass": signals[0], "mid": signals[1], "high": signals[2], "onset": float(self.f["onset"][i]), "time": float(seconds)}

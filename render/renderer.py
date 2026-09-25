@@ -2,6 +2,7 @@
 import numpy as np
 from functools import lru_cache
 from time import perf_counter
+from pathlib import Path
 
 def parse_color(value):
     value=str(value or "#FFFFFF").lstrip("#")
@@ -16,6 +17,46 @@ def gradient_colors(template,count):
     return _gradient_lut(str(template.get("gradient_start") or template.get("color","#FFFFFF")),str(template.get("gradient_end") or template.get("color","#FFFFFF")),bool(template.get("gradient")),int(count))
 def _geometry(w,h,values,t):
     usable=max(1,int(w*float(t.get("width",.72))));x0=(w-usable)//2;step=usable/max(1,len(values));base={"top":int(h*.18),"center":int(h*.5),"bottom":int(h*.82)}.get(t.get("position","bottom"),int(h*.82));maximum=max(1,int(h*float(t.get("height",.22))));gap=np.clip(float(t.get("gap",.45)),0,.95);width=max(1,int(step*float(t.get("bar_width",1-gap))));return x0,step,base,maximum,width
+
+SIGNATURE_STYLES={"dot_matrix","twin_dot_matrix","dot_line_hybrid","echo_dots"}
+
+def _hex(value):
+    if isinstance(value,(tuple,list,np.ndarray)): return tuple(map(int,value))
+    text=str(value).lstrip("#"); return tuple(int(text[i:i+2],16) for i in (0,2,4))
+
+def signature_instances(w,h,state,t):
+    """Return batched (x,y,r,color,alpha) dots plus optional line points.
+
+    This is the single deterministic geometry source used by CPU and GPU.
+    """
+    values=np.asarray(state["values"],np.float32); n=len(values); style=str(t.get("renderer")).lower()
+    usable=w*float(t.get("width",.68)); x0=(w-usable)/2+w*float(t.get("x_offset",0)); base=h*float(t.get("baseline_y",.5)); max_rows=max(1,int(t.get("column_limit",8)))
+    radius=float(t.get("dot_diameter",4.5))/2; gap=float(t.get("dot_gap",4.0)); pitch=max(radius*2+gap,usable/max(1,n)); xs=x0+(np.arange(n)+.5)*usable/n
+    primary=_hex(t.get("color","#FFFFFF")); secondary=_hex(t.get("secondary_color",t.get("color","#FFFFFF"))); accent=_hex(t.get("accent_color",secondary)); opacity=float(t.get("opacity",1)); dots=[]
+    def add_column(x,v,index,color=primary,lean=0.0):
+        rows=max(1,min(max_rows,int(np.ceil(float(v)*max_rows))))
+        for row in range(rows):
+            side=-1 if row%2==0 else 1; level=(row+1)//2 if row else 0
+            y=base+side*level*(radius*2+gap)
+            dots.append((x+lean*level,y,radius,color,opacity*(.72+.28*(row+1)/rows)))
+    if style=="twin_dot_matrix":
+        half=n//2; center=w/2; interaction=float(t.get("interaction_strength",.35))*float(state.get("onset",0)); spread=usable*.47
+        for i,v in enumerate(values[:half]): add_column(center-spread+(i+.5)*spread/half+interaction*usable*.025,v*(1+.08*float(state.get("mid",0))),i,primary,.10)
+        for i,v in enumerate(values[half:]): add_column(center+(i+.5)*spread/max(1,n-half)-interaction*usable*.025,v*(1+.08*float(state.get("bass",0))),i,secondary,-.10)
+        if interaction>.08:
+            for x in (center-pitch*.65,center+pitch*.65): dots.append((x,base,radius*1.12,accent,min(1,opacity*(.45+interaction))))
+    elif style=="dot_line_hybrid":
+        smooth=np.convolve(np.pad(values,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid"); line_y=base-smooth*h*float(t.get("line_height",.06)); threshold=float(t.get("cluster_threshold",.58))
+        peaks=(smooth>threshold)&(smooth>=np.roll(smooth,1))&(smooth>=np.roll(smooth,-1))
+        for i in np.flatnonzero(peaks): add_column(xs[i],smooth[i]*float(t.get("bloom_amount",.72)),i,secondary)
+        return dots,np.column_stack((xs,line_y)).astype(np.float32)
+    else:
+        for i,v in enumerate(values): add_column(xs[i],v,i,primary)
+        if style=="echo_dots" and float(state.get("onset",0))>.18:
+            strength=float(state["onset"]); direction=np.where(np.arange(n)%2,-1,1)
+            for echo,fade in ((1,.24),(2,.11)):
+                for i in np.flatnonzero(values>.62): dots.append((xs[i]+direction[i]*pitch*echo,base,radius*(1-.12*echo),secondary,opacity*fade*strength))
+    return dots,None
 
 def build_line_vertices(w,h,values,template,mirror=False):
     """Return a connected miter-style triangle strip in pixel coordinates."""
@@ -35,9 +76,11 @@ class CPURenderer:
         def bar(x,a,color,down=False):
             y1,y2=(base,min(h-1,base+a)) if down else (max(0,base-a),base);radius=int(min(bw/2,a/2)*np.clip(float(template.get("roundness",0)),0,1));cv2.rectangle(rgb,(x-bw//2,y1),(x+bw//2,y2),tuple(map(int,color)),-1,cv2.LINE_AA);cv2.rectangle(alpha,(x-bw//2,y1),(x+bw//2,y2),opacity,-1,cv2.LINE_AA)
             if radius:cy=y2 if down else y1;cv2.circle(rgb,(x,cy),bw//2,tuple(map(int,color)),-1,cv2.LINE_AA);cv2.circle(alpha,(x,cy),bw//2,opacity,-1,cv2.LINE_AA)
-        if style in {"ribbon","ring","radial"}:
+        if style in SIGNATURE_STYLES:
+            self._draw_signature(cv2,rgb,alpha,w,h,state,template)
+        elif style in {"ribbon","ring","radial"}:
             self._draw_special(cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity)
-        for i,value in enumerate(values):
+        for i,value in enumerate(values if style not in SIGNATURE_STYLES else []):
             amplitude=max(1,int(float(value)*maximum));x=int(x0+(i+.5)*step);points.append((x,base-amplitude))
             if style=="bars":bar(x,amplitude,colors[i]);mirror and bar(x,amplitude,colors[i],True)
             elif style=="dot":
@@ -57,7 +100,26 @@ class CPURenderer:
                 size=(max(1,round(w*scale)),max(1,round(h*scale)));small_a=cv2.resize(alpha,size,interpolation=cv2.INTER_AREA);small_rgb=cv2.resize(rgb,size,interpolation=cv2.INTER_AREA);ga=cv2.resize(cv2.GaussianBlur(small_a,(0,0),max(.1,radius*scale)),(w,h),interpolation=cv2.INTER_LINEAR);gr=cv2.resize(cv2.GaussianBlur(small_rgb,(0,0),max(.1,radius*scale)),(w,h),interpolation=cv2.INTER_LINEAR)
             else:ga=cv2.GaussianBlur(alpha,(0,0),radius);gr=cv2.GaussianBlur(rgb,(0,0),radius)
             alpha=cv2.max(alpha,cv2.convertScaleAbs(ga,alpha=strength));rgb=cv2.addWeighted(rgb,1.0,gr,strength,0)
-        glow_elapsed=perf_counter()-glow_started;final_started=perf_counter();result=np.dstack((rgb,alpha));final_elapsed=perf_counter()-final_started;self.last_profile={"setup_ms":setup_elapsed*1000,"allocation_ms":allocation_elapsed*1000,"draw_ms":draw_elapsed*1000,"glow_ms":glow_elapsed*1000,"final_copy_ms":final_elapsed*1000,"total_ms":(perf_counter()-total_started)*1000};return result
+        glow_elapsed=perf_counter()-glow_started;final_started=perf_counter();rgb[alpha==0]=0;result=np.dstack((rgb,alpha));final_elapsed=perf_counter()-final_started;self.last_profile={"setup_ms":setup_elapsed*1000,"allocation_ms":allocation_elapsed*1000,"draw_ms":draw_elapsed*1000,"glow_ms":glow_elapsed*1000,"final_copy_ms":final_elapsed*1000,"total_ms":(perf_counter()-total_started)*1000};return result
+    def _draw_signature(self,cv2,rgb,alpha,w,h,state,t):
+        dots,line=signature_instances(w,h,state,t); halo=float(t.get("halo_alpha",.14)); halo_scale=float(t.get("halo_scale",1.75))
+        # Two batched contour calls (halo/core), independent of dot count.
+        def contours(scale):
+            result=[]
+            for x,y,r,_,_ in dots:
+                rr=max(1,int(round(r*scale))); angles=np.linspace(0,2*np.pi,12,endpoint=False); result.append(np.column_stack((x+np.cos(angles)*rr,y+np.sin(angles)*rr)).astype(np.int32))
+            return result
+        if dots:
+            # Palette groups preserve colour identity while retaining batching.
+            for color in {d[3] for d in dots}:
+                selected=[d for d in dots if d[3]==color]
+                original=dots; dots=selected
+                if halo>0:
+                    cv2.fillPoly(rgb,contours(halo_scale),color,lineType=cv2.LINE_AA); cv2.fillPoly(alpha,contours(halo_scale),int(255*halo),lineType=cv2.LINE_AA)
+                cv2.fillPoly(rgb,contours(1),color,lineType=cv2.LINE_AA); cv2.fillPoly(alpha,contours(1),int(255*max(d[4] for d in selected)),lineType=cv2.LINE_AA)
+                dots=original
+        if line is not None and len(line)>1:
+            color=_hex(t.get("line_color",t.get("color","#FFFFFF"))); pts=line.astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[pts],False,color,max(1,int(t.get("line_thickness",1))),cv2.LINE_AA);cv2.polylines(alpha,[pts],False,int(255*float(t.get("baseline_strength",.72))),max(1,int(t.get("line_thickness",1))),cv2.LINE_AA)
     def _draw_special(self, cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity):
         n=len(values); center=(w//2,h//2); mirror=bool(template.get("mirror")); thickness=max(1,int(template.get("bar_width",.55)*max(2,bw)))
         if style=="ribbon":
@@ -105,6 +167,7 @@ in vec2 position;out vec2 uv;void main(){uv=position*.5+.5;gl_Position=vec4(posi
 uniform sampler2D original;uniform sampler2D glow;uniform float strength;in vec2 uv;out vec4 frag;
 void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=vec4(min(a.rgb+g.rgb,vec3(1)),max(a.a,g.a));}''')
         self.blur_vao=self.ctx.simple_vertex_array(self.blur_program,self.screen,"position");self.composite_vao=self.ctx.simple_vertex_array(self.composite_program,self.screen,"position")
+        self._instance_capacity=4096; self._rect_buffer=self.ctx.buffer(reserve=self._instance_capacity*16,dynamic=True); self._color_buffer=self.ctx.buffer(reserve=self._instance_capacity*12,dynamic=True)
     def available(self):return True
     def _draw_shapes(self,w,h,values,t):
         x0,step,base,maximum,bw=_geometry(w,h,values,t);mirror=bool(t.get("mirror"));rects=[];colors=[]
@@ -118,6 +181,19 @@ void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=ve
                 else:rects.append((cx,h-base-amplitude/2,bw,amplitude))
                 colors.append(gradient_colors(t,len(values))[i]/255)
         rb=self.ctx.buffer(np.asarray(rects,"f4").tobytes());cb=self.ctx.buffer(np.asarray(colors,"f4").tobytes());vao=self.ctx.vertex_array(self.shape_program,[(self.quad,"2f","corner"),(rb,"4f/i","rect"),(cb,"3f/i","instance_color")]);self.shape_program["viewport"].value=(w,h);self.shape_program["opacity"].value=float(t.get("opacity",1));self.shape_program["shape"].value=1 if t.get("renderer")=="dot" else 0;self.shape_program["roundness"].value=float(t.get("roundness",0));vao.render(self.gl.TRIANGLE_STRIP,instances=len(rects));vao.release();rb.release();cb.release()
+    def _draw_signature(self,w,h,state,t):
+        dots,line=signature_instances(w,h,state,t); rects=[]; colors=[]
+        halo=float(t.get("halo_alpha",.14)); hs=float(t.get("halo_scale",1.75))
+        for scale,alpha_scale in ((hs,halo),(1.0,1.0)):
+            if alpha_scale<=0: continue
+            for x,y,r,color,a in dots:
+                rects.append((x,h-y,2*r*scale,2*r*scale)); colors.append(np.asarray(color,np.float32)/255*min(1,a*alpha_scale))
+        if rects:
+            count=len(rects); rb=np.asarray(rects,"f4"); cb=np.asarray(colors,"f4")
+            if count>self._instance_capacity: raise RuntimeError("signature instance capacity exceeded")
+            self._rect_buffer.write(rb.tobytes()); self._color_buffer.write(cb.tobytes()); vao=self.ctx.vertex_array(self.shape_program,[(self.quad,"2f","corner"),(self._rect_buffer,"4f/i","rect"),(self._color_buffer,"3f/i","instance_color")]); self.shape_program["viewport"].value=(w,h); self.shape_program["opacity"].value=1.0; self.shape_program["shape"].value=1; self.shape_program["roundness"].value=1.0; vao.render(self.gl.TRIANGLE_STRIP,instances=count); vao.release()
+        if line is not None and len(line)>1:
+            color=np.asarray(_hex(t.get("line_color",t.get("color","#FFFFFF"))),np.float32)/255; verts=np.column_stack((line,np.tile(color,(len(line),1)))).astype("f4"); buf=self.ctx.buffer(verts.tobytes()); vao=self.ctx.vertex_array(self.special_program,[(buf,"2f 3f","position","vertex_color")]); self.special_program["viewport"].value=(w,h); self.special_program["opacity"].value=float(t.get("baseline_strength",.72)); vao.render(self.gl.LINE_STRIP); vao.release(); buf.release()
     def _draw_line(self,w,h,values,t):
         for mirror in ([False,True] if t.get("mirror") else [False]):
             vertices=build_line_vertices(w,h,values,t,mirror)
@@ -142,7 +218,8 @@ void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=ve
         textures=[self.ctx.texture((w,h),4,dtype="f1") for _ in range(3)];fbos=[self.ctx.framebuffer([tex]) for tex in textures];original.use(0);self.blur_program["source"].value=0;fbos[0].use();self.blur_program["direction"].value=(max(1,radius)/w,0);self.blur_vao.render(self.gl.TRIANGLE_STRIP);textures[0].use(0);fbos[1].use();self.blur_program["direction"].value=(0,max(1,radius)/h);self.blur_vao.render(self.gl.TRIANGLE_STRIP);original.use(0);textures[1].use(1);fbos[2].use();self.composite_program["original"].value=0;self.composite_program["glow"].value=1;self.composite_program["strength"].value=float(strength);self.composite_vao.render(self.gl.TRIANGLE_STRIP);return textures,fbos,textures[2]
     def render_rgba(self,w,h,state,t):
         values=np.asarray(state["values"],"f4");base=self.ctx.texture((w,h),4,dtype="f1");base.filter=(self.gl.LINEAR,self.gl.LINEAR);fbo=self.ctx.framebuffer([base]);fbo.use();self.ctx.clear(0,0,0,0);self.ctx.enable(self.gl.BLEND);self.ctx.blend_func=(self.gl.SRC_ALPHA,self.gl.ONE_MINUS_SRC_ALPHA)
-        if t.get("renderer")=="line":self._draw_line(w,h,values,t)
+        if str(t.get("renderer")).lower() in SIGNATURE_STYLES:self._draw_signature(w,h,state,t)
+        elif t.get("renderer")=="line":self._draw_line(w,h,values,t)
         elif str(t.get("renderer")).lower() in {"ribbon","ring","radial"}: self._draw_special_gpu(w,h,values,t)
         else:self._draw_shapes(w,h,values,t)
         resources=[];output=base

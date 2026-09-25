@@ -12,7 +12,8 @@ def resolve_template(value):
     candidates=list(resource_path("templates").glob("*.json"))
     for candidate in candidates:
         template=load_template(candidate)
-        if slug in {candidate.stem.lower(),str(template.get("name","")).lower().replace(" ","_")} or candidate.stem.endswith(slug):return template
+        aliases={candidate.stem.lower(),str(template.get("name","")).lower().replace(" ","_"),str(template.get("id","")).lower()}
+        if slug in aliases or candidate.stem.endswith(slug):return template
     raise FileNotFoundError(f"Template not found: {value}")
 def run_job(job_or_path,result_path=None,render_fn=render_audio):
     job=load_job(job_or_path) if isinstance(job_or_path,(str,Path)) else validate_job(job_or_path);started=time.perf_counter();output_dir=Path(job["output_dir"]);output_dir.mkdir(parents=True,exist_ok=True);results=[]
@@ -20,8 +21,10 @@ def run_job(job_or_path,result_path=None,render_fn=render_audio):
         source=Path(item["audio"]);record={"audio":str(source),"status":"failed"}
         try:
             if not source.exists():raise FileNotFoundError(f"Missing source track: {source}")
-            template=resolve_template(item["preset"]);fmt=item["format"];override={**job.get("export",{}),**item.get("export",{})}
-            resolution=override.pop("resolution","1920x1080");options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in override.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path"}})
+            template=resolve_template(item["preset"]);fmt=item["format"];override={**job.get("export",{}),**item.get("export",{})};profile=template.get("canvas_profile",{}) if template.get("category")=="chill_rap_signature" else {}
+            resolution=override.pop("resolution","SIGNATURE" if profile else "1920x1080")
+            if profile and resolution=="SIGNATURE":override={"width":profile.get("width",960),"height":profile.get("height",160),"fps":profile.get("fps",24),"crf":18,**override}
+            options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in override.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","crf","video_codec","include_audio","canvas_mode"}})
             target=Path(item.get("output") or output_dir/(source.stem+output_extension(fmt)));details=render_fn(source,target,template,options)
             record.update(status="success",output=str(target),details=details or {})
         except Exception as exc:record["error"]=str(exc)

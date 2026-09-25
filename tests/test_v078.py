@@ -20,7 +20,7 @@ def test_builtin_preset_metadata_and_unique_ids():
     for path, data in entries:
         ids.append(data.get("id", path.stem))
         assert data.get("name_en") or data.get("name")
-        assert data.get("renderer") in {"bars", "line", "dot", "ribbon", "ring", "radial"}
+        assert data.get("renderer") in {"bars", "line", "dot", "ribbon", "ring", "radial", "dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots"}
         assert data.get("category", "legacy")
     assert len(ids) == len(set(ids))
 
