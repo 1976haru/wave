@@ -311,6 +311,7 @@ class MainWindow(QMainWindow):
         self.template_entries=[]
         for path,data in list_templates(resource_path("templates"),"my_templates"):
             self.template_entries.append((path,data))
+        self.template_entries.sort(key=lambda entry:(0 if entry[1].get("signature_tier")=="FINAL" else 1,str(entry[0])))
         self.filter_templates(self.template_filter.currentText() if hasattr(self,"template_filter") else "\ucd94\ucc9c \uC2A4\ud0c0\uc77c")
     def filter_templates(self,mode="전체 스타일"):
         if not hasattr(self,"template_list"): return
@@ -330,7 +331,7 @@ class MainWindow(QMainWindow):
             if mode=="Signature Classic · 그의 이야기" and category!="signature_his": continue
             if mode=="Signature Classic · 그녀의 이야기" and category!="signature_her": continue
             label=data.get("name_ko",data.get("name_en",data.get("name","Style")))
-            badge=("EXPERIMENTAL v3\n" if category=="signature_experimental_v3" else "EXPERIMENTAL v2\n") if data.get("signature_tier")=="EXPERIMENTAL" else ("★ v0.8.3.1 추천\n" if data.get("recommended") else ("대표\n" if data.get("signature_tier")=="MAIN" else ""))
+            badge="★ FINAL 추천\n" if data.get("signature_tier")=="FINAL" else (("EXPERIMENTAL v3\n" if category=="signature_experimental_v3" else "EXPERIMENTAL v2\n") if data.get("signature_tier")=="EXPERIMENTAL" else ("★ v0.8.3.1 추천\n" if data.get("recommended") else ("대표\n" if data.get("signature_tier")=="MAIN" else "")))
             item=QListWidgetItem(badge+str(label));item.setToolTip(f"{data.get('name_en',data.get('name',''))} | {data.get('category','')}");item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
     def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start();self.navigate_step(2)
     def save_my_template(self):
@@ -454,7 +455,14 @@ class MainWindow(QMainWindow):
         self.export_fps.setCurrentText(str(self.app_settings.get('fps','30')))
         self.ffmpeg_path.setText(str(self.app_settings.get("ffmpeg_path","") or ""));self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.app_settings.restore_window(self)
     def closeEvent(self,event):
-        self.app_settings.set("renderer_mode",self.renderer_choice.currentText());self.app_settings.set("quality",self.quality.currentText());self.app_settings.set("resolution",self.resolution.currentText());self.app_settings.set("fps",self.export_fps.currentText());self.app_settings.set("ffmpeg_path",self.ffmpeg_path.text());self.app_settings.save_window(self);self.stop_preview_worker();super().closeEvent(event)
+        self.app_settings.set("renderer_mode",self.renderer_choice.currentText());self.app_settings.set("quality",self.quality.currentText());self.app_settings.set("resolution",self.resolution.currentText());self.app_settings.set("fps",self.export_fps.currentText());self.app_settings.set("ffmpeg_path",self.ffmpeg_path.text());self.app_settings.save_window(self)
+        self.preview_timer.stop();self.debounce.stop();self.player.stop();self.stop_preview_worker()
+        if self.worker:self.worker.cancel()
+        if self.reference_worker:self.reference_worker.cancel()
+        for thread in (self.thread,self.reference_thread,self.preview_thread):
+            if thread and thread.isRunning():thread.requestInterruption();thread.quit();thread.wait(2000)
+            if thread and thread.isRunning():thread.terminate();thread.wait(1000)
+        super().closeEvent(event)
     def system_check(self):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):

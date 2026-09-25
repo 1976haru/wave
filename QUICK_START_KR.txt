@@ -1,15 +1,11 @@
-Music Wave Studio v0.8.3.1 SIGNATURE REDESIGN TEST
+Music Wave Studio 빠른 시작
 
-1. ZIP 압축 풀기
-2. MusicWaveStudio_v0.8.3.1.exe 실행
-3. sample_assets/sample_music_set 또는 자신의 음원 폴더 선택
-4. CHILL RAP SIGNATURE에서 추천 3개 확인
-   Dual: Symmetric Twin Bloom
-   His: Midnight Mirror Grid
-   Her: Pearl Stereo Bloom
-5. 미리보기 → 대기열에 추가 → 작업 시작
-6. 결과 MP4를 CapCut 위 트랙에 배치
-7. 혼합(Blend) → Screen(스크린)
-8. FEEDBACK_FORM_KR.txt 작성
+1. MusicWaveStudio_v0.8.3.4.exe 실행
+2. 음원 폴더 선택
+3. Tokyo Twin Flow / Tokyo Midnight Flow / Tokyo Pearl Flow 중 선택
+4. 미리보기 확인
+5. 대기열 추가
+6. 작업 시작
+7. wave 폴더의 MP4 확인
 
-10초 비교 영상은 validation_results/v0831_signature_redesign/videos에 있습니다.
+기본 출력: 960x160 / 24fps / H.264 / CRF18 / yuv420p / 검정 배경

@@ -109,10 +109,12 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         else:
             scale=h*.305*amp_gain; pull=.94+.08*np.sin(phase+tm*.38); curve=.16+.84*stereo; upper=base-scale*curve*pull+breathe*h*.010; lower=base+scale*np.roll(curve,1)*(.78+.08*np.cos(phase-tm*.31)); main_alpha=.94; fill_alpha=.10
         # Layer A: connected upper/lower body with slow colour drift.
+        lower_gain=float(t.get("lower_response_gain",1.0)); lower=base+(lower-base)*lower_gain
         line(np.column_stack((xx,upper)),flow_color(.02),main_alpha,2,{"other":np.column_stack((xx,lower)),"color":flow_color(.38),"alpha":fill_alpha*secondary_gain})
-        line(np.column_stack((xx,lower)),flow_color(.62),.68 if personality!="HIS" else .76,2 if personality=="HER" else 1)
+        lower_alpha=float(t.get("lower_ribbon_alpha",.68 if personality!="HIS" else .76))
+        line(np.column_stack((xx,lower)),flow_color(.62),lower_alpha,2 if personality=="HER" else 1)
         bridge=base+breathe*h*.009*(.45+.55*centre_mix)
-        line(np.column_stack((xx,bridge)),flow_color(.31),.34+.16*onset*onset_gain,1)
+        bridge_gain=float(t.get("center_bridge_gain",1.0));line(np.column_stack((xx,bridge)),flow_color(.31),(.30+.20*onset*onset_gain)*bridge_gain,1)
         # Layer B: selective low-mid pillars; dense/sparse rhythm is fixed, not random.
         for i,(x,v) in enumerate(zip(xx,stereo)):
             selected=(i%4 in (0,1) and i%7!=3) or v>.72

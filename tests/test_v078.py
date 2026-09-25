@@ -34,7 +34,7 @@ def test_builtin_presets_validate_json_utf8():
 def test_gallery_recommended_and_all_filters(qapp):
     window = MainWindow()
     assert window.template_filter.currentText()
-    assert window.template_list.count() == 9
+    assert window.template_list.count() == 12
     window.template_filter.setCurrentText("전체 스타일")
     assert window.template_list.count() >= 30
     window.close()

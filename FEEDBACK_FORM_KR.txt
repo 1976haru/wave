@@ -1,24 +1,39 @@
-Music Wave Studio v0.8.3.1 시그니처 재설계 피드백
+Music Wave Studio v0.8.3.4 Beta 피드백
 
-PC/Windows:
-EXE 실행 성공: YES / NO
-Preset gallery 추천 3개 확인: YES / NO
-10초 샘플 확인: YES / NO
-15곡 SET 출력: YES / NO
-CapCut Screen 합성: YES / NO
+PC / Windows:
+실행 성공: YES / NO
 
-Dual Story 최선호 (Twin Bloom / Crossfade / Echo Dialogue):
-His Story 최선호 (Urban Stereo / Midnight Mirror / Blue Structure):
-Her Story 최선호 (Silk Ribbon / Pearl Bloom / Lavender Line):
+음원 폴더 선택:
+쉬움 / 보통 / 어려움
 
-추천 메인 3개 미감 (각 1~10):
-가장 예쁜 것과 이유:
-가장 독특한 것과 이유:
-색상 다양성: 부족 / 적절 / 과함
-좌우 반응: 약함 / 적절 / 과함
-움직임: 밋밋함 / 적절 / 산만함
-일반 EQ처럼 느껴지는 후보:
-CapCut에서 존재감이 약한 후보:
-아직 부족한 점:
-오류 메시지:
-다시 쓸 의향: YES / NO
+대기열 추가:
+쉬움 / 보통 / 어려움
+
+렌더 완료:
+YES / NO
+
+CapCut Screen:
+YES / NO
+
+Twin Flow 만족도:
+1~10
+
+Midnight Flow 만족도:
+1~10
+
+Pearl Flow 만족도:
+1~10
+
+가장 예쁜 파형:
+
+가장 브랜드답다고 느낀 파형:
+
+자막 방해:
+없음 / 조금 / 많이
+
+불편한 점:
+
+오류:
+
+다시 사용할 의향:
+YES / NO

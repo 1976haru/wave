@@ -34,8 +34,9 @@ def packaged_smoke(window,application):
             window.queue_manager.state_path=smoke_root/"queue_state.json"; window.queue_manager.sets=[]; window.audio_files=[str(wav)]; window.audio_list.clear(); window.audio_list.addItem(wav.name); window.set_output_dir(str(smoke_root/"wave")); window.navigate_step(3); window.queue_panel.add_button.click(); application.processEvents()
             report.update({"queue_add_clicked":True,"queue_count":len(window.queue_manager.sets),"queue_card_visible":len(window.queue_manager.sets)==1,"queue_step":window.current_step,"queue_start_enabled":window.primary_action.isEnabled()})
         except Exception as exc: report.update({"queue_add_clicked":False,"queue_error":repr(exc)})
-    shot_dir=Path(os.environ.get("MWS_SCREENSHOT_DIR",""));
-    if shot_dir:
+    shot_value=os.environ.get("MWS_SCREENSHOT_DIR")
+    if shot_value:
+        shot_dir=Path(shot_value)
         shot_dir.mkdir(parents=True,exist_ok=True);window.grab().save(str(shot_dir/"gui_simple_korean.png"));window.left_tabs.setCurrentWidget(window.queue_panel);window.grab().save(str(shot_dir/"gui_queue_korean.png"))
     target=Path(os.environ.get("MWS_SMOKE_REPORT",Path(tempfile.gettempdir())/"music_wave_smoke.json"))
     if os.environ.get("MWS_REFERENCE_SMOKE")=="1":
@@ -53,7 +54,9 @@ def _configure_logging():
     root=Path(os.environ.get("LOCALAPPDATA",Path.home()))/"MusicWaveStudio"/"logs"
     root.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(filename=str(root/"music_wave_studio.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-    logging.info("Music Wave Studio version=%s executable=%s",get_version(),sys.executable)
+    logging.info("Music Wave Studio version=%s os=%s executable=%s",get_version(),sys.platform,sys.executable)
+    def log_unhandled(kind,value,traceback):logging.critical("unhandled exception",exc_info=(kind,value,traceback));sys.__excepthook__(kind,value,traceback)
+    sys.excepthook=log_unhandled
 
 def main(argv=None):
     _configure_logging()
