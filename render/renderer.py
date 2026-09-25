@@ -66,8 +66,14 @@ def _stereo_signature_geometry(w,h,state,t,palette):
     center=w*.5; base=h*float(t.get("baseline_y",.5)); width=w*float(t.get("width",.76)); half_count=max(12,len(values)//2)
     raw=np.resize(values,half_count); smooth=np.convolve(np.pad(raw,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid")
     # Both halves share musical intent but retain an 8% conversational offset.
-    left=np.clip(.92*smooth+.08*np.roll(smooth,2)*float(state.get("mid",.5)),0,1); right=np.clip(.90*smooth+.10*np.roll(smooth,-2)*float(state.get("bass",.5)),0,1)
+    left_raw=np.resize(state.get("left_values",smooth),half_count);right_raw=np.resize(state.get("right_values",smooth),half_count)
+    left=np.clip(.82*smooth+.18*np.roll(left_raw,1)*(.82+.18*float(state.get("mid",.5))),0,1);right=np.clip(.78*smooth+.22*np.roll(right_raw,-1)*(.80+.20*float(state.get("bass",.5))),0,1)
     xs=np.linspace(center-width*.48,center-width*.035,half_count); xr=2*center-xs[::-1]; radius=float(t.get("dot_diameter",4.4))/2; gap=float(t.get("dot_gap",3.6)); limit=int(t.get("column_limit",7)); opacity=float(t.get("opacity",.97)); onset=float(state.get("onset",0)); tm=float(state.get("time",0)); dots=[]; lines=[]
+    intensity=str(t.get("intensity","NORMAL")).upper();amp_gain=1.28 if intensity=="DYNAMIC" else 1.0;onset_gain=1.24 if intensity=="DYNAMIC" else 1.0;secondary_gain=1.16 if intensity=="DYNAMIC" else 1.0
+    flow_palette=[_hex(c) for c in t.get("flow_palette",["#FF4FA3","#B77CFF","#42D9FF"])]
+    flow_period=max(5.0,float(t.get("color_flow_seconds",10.0)))
+    def flow_color(position,offset=0):
+        phase=((position+tm/flow_period+offset)%1.0)*len(flow_palette);i=int(phase)%len(flow_palette);f=round((phase-i)*2)/2.0;a=np.asarray(flow_palette[i]);b=np.asarray(flow_palette[(i+1)%len(flow_palette)]);return tuple(map(int,np.clip(a*(1-f)+b*f,0,248)))
     def dot(x,y,r,color,alpha=opacity):dots.append((float(x),float(y),float(r),color,float(alpha)))
     def column(x,v,color,outward=1,scale=1):
         rows=max(1,min(limit,int(np.ceil((.18+.82*v)*limit*scale))))
@@ -75,7 +81,38 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             side=-1 if j%2==0 else 1; level=(j+1)//2
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
-    if variant=="twin_bloom":
+    if variant=="twin_bloom_v2":
+        gap_ratio=max(.055,.115-onset*onset_gain*.035);xl=np.linspace(center-width*.47,center-width*gap_ratio,half_count);xright=2*center-xl[::-1]
+        env=np.sin(np.linspace(.08,np.pi-.08,half_count))**.72;left_body=np.clip((.20+.80*left)*env,0,1);right_body=np.clip((.20+.80*right)*env[::-1],0,1);scale=h*.285*amp_gain
+        lu=base-left_body*scale;ld=base+np.roll(left_body,1)*scale*.82;ru=base-right_body*scale*.94;rd=base+np.roll(right_body,-1)*scale*.88
+        line(np.column_stack((xl,lu)),flow_color(.05),.94,2,{"other":np.column_stack((xl,ld)),"color":flow_color(.26),"alpha":.12*secondary_gain});line(np.column_stack((xright,ru)),flow_color(.58),.94,2,{"other":np.column_stack((xright,rd)),"color":flow_color(.78),"alpha":.12*secondary_gain})
+        line(np.column_stack((xl,base-(left_body*.72+np.roll(left_body,2)*.15)*scale*.55)),flow_color(.22),.42*secondary_gain,1);line(np.column_stack((xright,base+(right_body*.68+np.roll(right_body,-2)*.16)*scale*.52)),flow_color(.72),.42*secondary_gain,1)
+        for i in range(1,half_count,2):
+            dot(xl[i],lu[i],radius*(.82+.35*left_body[i]),flow_color(i/half_count*.42),.94);dot(xright[i],rd[i],radius*(.82+.35*right_body[i]),flow_color(.56+i/half_count*.42),.94)
+        pulse=np.clip(onset*onset_gain-.18,0,1)
+        if pulse>0:
+            for k in range(-2,3):dot(center+k*radius*3,base+np.sin(k*.8+tm)*h*.012,radius*(1.0+pulse*.8-abs(k)*.08),flow_color(.45+k*.025),.45+.48*pulse)
+    elif variant=="midnight_grid_v2":
+        xx=np.r_[xs,xr];energy=np.r_[left,right];n=len(xx);sky=np.clip(.15+.85*energy*(.62+.38*np.sin(np.arange(n)*1.83+1.2)**2),0,1);scale=h*.32*amp_gain
+        tops=[];bottoms=[]
+        for i,(x,v) in enumerate(zip(xx,sky)):
+            accent=(i%7==0 or v>.72);height=(.22+.78*v)*scale*(1.18 if accent else .68);up=base-height;down=base+height*(.42+.18*((i+1)%3));tops.append(up);bottoms.append(down);color=p3 if accent and v>.76 else flow_color(i/max(1,n-1)*.78)
+            thickness=radius*(1.18 if accent else .86);dot(x,up,thickness,color,.96);dot(x,down,thickness*.78,color,.72)
+            steps=max(1,int(height/(radius*2+gap)))
+            for j in range(1,steps,2):dot(x,base-j*(radius*2+gap),radius*.78,color,.82);dot(x,base+j*(radius*2+gap)*.58,radius*.64,color,.55)
+        angular=np.column_stack((xx,np.asarray(tops)*.74+base*.26));line(angular,flow_color(.18),.68,2);line(np.column_stack((xx,np.asarray(bottoms))),flow_color(.62),.30*secondary_gain,1)
+        for i in range(3,n,8):dot(xx[i],base+(np.sin(i+tm*.8))*h*.018,radius*.62,flow_color(i/n),.46)
+    elif variant=="pearl_bloom_v2":
+        allx=np.r_[xs,xr];energy=np.r_[left,right];phase=np.linspace(-np.pi,np.pi,len(allx));breath=.88+.12*np.sin(tm*.72);scale=h*.235*amp_gain;body=np.clip(.18+.82*energy,0,1)
+        upper=base-body*scale*breath+np.sin(phase*1.35+tm*.24)*h*.018;lower=base+np.roll(body,2)*scale*.78*breath-np.sin(phase*1.18-tm*.19)*h*.014
+        line(np.column_stack((allx,upper)),flow_color(.02),.92,2,{"other":np.column_stack((allx,lower)),"color":flow_color(.33),"alpha":.10*secondary_gain});line(np.column_stack((allx,lower)),flow_color(.58),.74,2)
+        echo_up=base+(upper-base)*1.22;echo_down=base+(lower-base)*1.18;line(np.column_stack((allx,echo_up)),flow_color(.28),.28*secondary_gain,1);line(np.column_stack((allx,echo_down)),flow_color(.82),.24*secondary_gain,1)
+        peaks=(body>.52)&(body>=np.roll(body,1))&(body>=np.roll(body,-1));indices=np.flatnonzero(peaks)[:8]
+        for i in indices:
+            size=radius*(1.05+.55*body[i]+.25*onset*onset_gain);dot(allx[i],upper[i],size,flow_color(i/len(allx)),.98);dot(allx[i],lower[i],size*.72,p3,.68)
+            if onset>.45:
+                for off,fade in ((-1,.38),(1,.38)):dot(allx[i]+off*radius*3.2,upper[i]+off*h*.008,radius*.72,flow_color(i/len(allx)+off*.03),fade)
+    elif variant=="twin_bloom":
         for i,(x,v) in enumerate(zip(xs,left)):
             bloom=max(np.exp(-((i-half_count*.22)/(half_count*.13))**2),np.exp(-((i-half_count*.72)/(half_count*.12))**2))
             if i%2==0 or bloom>.62:column(x,v,p0 if i<half_count*.58 else p2,scale=.38+.52*bloom)
@@ -185,10 +222,9 @@ class CPURenderer:
         dots,line=signature_instances(w,h,state,t); halo=float(t.get("halo_alpha",.14)); halo_scale=float(t.get("halo_scale",1.75))
         # Two batched contour calls (halo/core), independent of dot count.
         def contours(scale):
-            result=[]
-            for x,y,r,_,_ in dots:
-                rr=max(1,int(round(r*scale))); angles=np.linspace(0,2*np.pi,12,endpoint=False); result.append(np.column_stack((x+np.cos(angles)*rr,y+np.sin(angles)*rr)).astype(np.int32))
-            return result
+            if not dots:return []
+            centers=np.asarray([(d[0],d[1]) for d in dots],np.float32)[:,None,:];radii=np.maximum(1,np.asarray([d[2] for d in dots],np.float32)*scale)[:,None,None];angles=np.linspace(0,2*np.pi,12,endpoint=False,dtype=np.float32);unit=np.column_stack((np.cos(angles),np.sin(angles)))[None,:,:]
+            return list(np.rint(centers+radii*unit).astype(np.int32))
         if dots:
             # Palette groups preserve colour identity while retaining batching.
             for color in {d[3] for d in dots}:

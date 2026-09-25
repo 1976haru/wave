@@ -21,7 +21,7 @@ def run_job(job_or_path,result_path=None,render_fn=render_audio):
         source=Path(item["audio"]);record={"audio":str(source),"status":"failed"}
         try:
             if not source.exists():raise FileNotFoundError(f"Missing source track: {source}")
-            template=resolve_template(item["preset"]);fmt=item["format"];override={**job.get("export",{}),**item.get("export",{})};profile=template.get("canvas_profile",{}) if template.get("category")=="chill_rap_signature" else {}
+            template=resolve_template(item["preset"]);fmt=item["format"];override={**job.get("export",{}),**item.get("export",{})};profile=template.get("canvas_profile",{}) if template.get("category") in {"chill_rap_signature","signature_experimental_v2"} else {}
             resolution=override.pop("resolution","SIGNATURE" if profile else "1920x1080")
             if profile and resolution=="SIGNATURE":override={"width":profile.get("width",960),"height":profile.get("height",160),"fps":profile.get("fps",24),"crf":18,**override}
             options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in override.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","crf","video_codec","include_audio","canvas_mode"}})

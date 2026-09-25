@@ -17,7 +17,7 @@ class AnimationEngine:
         # Signature modes use a perceptual six-zone curve.  It deliberately
         # favours bass/low-mid content and keeps hi-hats from turning the calm
         # dotted baseline into a conventional full-height EQ.
-        if str(self.t.get("renderer", "")).lower() in {"dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots"}:
+        if str(self.t.get("renderer", "")).lower() in {"dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots", "stereo_signature"}:
             zone_weights = np.asarray(self.t.get("frequency_weights", [.85, 1.15, 1.10, .90, .70, .55]), np.float32)
             for positions, weight in zip(np.array_split(np.arange(len(values)), len(zone_weights)), zone_weights):
                 values[positions] *= weight
@@ -39,4 +39,12 @@ class AnimationEngine:
         else:
             retain = np.where(values > self.prev, np.clip(float(self.t.get("attack", .5)),0,1), np.clip(float(self.t.get("decay", .9)),0,1))
             self.prev = retain*self.prev + (1-retain)*values
-        return {"values": self.prev.copy(), "bass": signals[0], "mid": signals[1], "high": signals[2], "onset": float(self.f["onset"][i]), "time": float(seconds)}
+        result={"values":self.prev.copy(),"bass":signals[0],"mid":signals[1],"high":signals[2],"onset":float(self.f["onset"][i]),"time":float(seconds)}
+        if str(self.t.get("renderer","")).lower()=="stereo_signature":
+            def delayed(ms,blend):
+                index=max(0,i-int(round(float(ms)*fps/1000.0)));raw=np.resize(self.f["spectrum"][index].astype(np.float32),len(self.prev));floor=float(self.t.get("dot_floor",.07));raw=floor+(1-floor)*np.power(np.clip(raw,0,1),float(self.t.get("soft_compression",.7)));return np.clip((1-blend)*self.prev+blend*raw,0,1)
+            result["left_values"]=delayed(self.t.get("left_delay_ms",20),.22)
+            result["right_values"]=delayed(self.t.get("right_delay_ms",65),.30)
+            result["left_onset"]=float(self.f["onset"][max(0,i-int(round(float(self.t.get("left_delay_ms",20))*fps/1000.0)))])
+            result["right_onset"]=float(self.f["onset"][max(0,i-int(round(float(self.t.get("right_delay_ms",65))*fps/1000.0)))])
+        return result
