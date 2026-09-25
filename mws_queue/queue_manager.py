@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import copy,json,shutil,time,uuid
 from dataclasses import asdict,dataclass,field
 from pathlib import Path
@@ -72,8 +72,9 @@ class QueueManager:
         for item in self.sets:
             errors=[]
             for track in item.tracks:
-                source=Path(track.get("audio",track.get("source_path","")))
-                if not source.exists():errors.append(f"{source.name}: 음원 파일 없음")
+                sources=[Path(p) for p in track.get("set_audio_files",[])] or [Path(track.get("audio",track.get("source_path","")))]
+                for source in sources:
+                    if not source.exists():errors.append(f"{source.name}: ?? ?? ??")
                 if check_template:
                     try:check_template(track.get("preset",item.preset))
                     except Exception as exc:errors.append(str(exc))

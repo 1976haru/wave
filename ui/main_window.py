@@ -24,6 +24,7 @@ from render_job import run_job,resolve_template
 from pipeline.exporter import render_audio
 from pipeline.segment_resume import ensure_manifest,SEGMENT_SECONDS
 from pipeline.segment_renderer import render_segmented_track
+from pipeline.set_renderer import render_set
 from preview.engine import PreviewEngine,format_time
 from preview.scheduler import FrameScheduler
 from preview.worker import LatestFrameMailbox,PreviewRenderWorker
@@ -71,7 +72,8 @@ class TaskWorker(QObject):
             elif self.kind=="queue":
                 manager,sleep_enabled=self.payload
                 def render_track(track,job,progress_detail=None):
-                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(source.stem+output_extension(fmt)); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","video_codec","include_audio","canvas_mode"}});
+                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(track.get("output_name") or (source.stem+output_extension(fmt))); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","video_codec","include_audio","canvas_mode"}});
+                    if track.get("set_audio_files"): return render_set(track["set_audio_files"],target,template,options,track.get("timeline_path"),progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     return render_audio(source,target,template,options,progress_detail=progress_detail)
                 self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled))
@@ -133,7 +135,7 @@ class MainWindow(QMainWindow):
     def _color_button(self,form,label,key):
         button=QPushButton();button.clicked.connect(lambda:self.pick_color(key));self.fields[key]=button;form.addRow(label,button)
     def _export_tab(self):
-        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mov","webm","mp4"]);self.export_format.setCurrentText("mov");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","mov","webm"]);self.export_format.setCurrentText("mp4");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.export_fps.setCurrentIndex(0);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
         self.output_location=QLabel(self.current_output_dir or "출력 폴더를 선택하세요");choose=QPushButton("폴더 변경");choose.clicked.connect(self.choose_output_dir);form.addRow("출력 위치",self.output_location);form.addRow("",choose)
         for label,control in (("저장 방식",self.canvas_mode),("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed),("Prevent sleep while rendering",self.prevent_sleep)):form.addRow(label,control)
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
@@ -228,10 +230,14 @@ class MainWindow(QMainWindow):
         if not out:return False
         snapshot=self.build_current_job_snapshot();name=f"{datetime.date.today().isoformat()}_{snapshot['template'].get('name','Waveform')}"
         tracks=[]
-        export_settings={"format":snapshot["options"].format,"resolution":"OVERLAY" if snapshot["options"].canvas_mode=="overlay" else self.resolution.currentText(),"width":snapshot["options"].width,"height":snapshot["options"].height,"canvas_mode":snapshot["options"].canvas_mode,"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"ffmpeg_path":snapshot["options"].ffmpeg_path,"video_codec":snapshot["options"].video_codec,"include_audio":snapshot["options"].include_audio}
-        for path in snapshot["audio_files"]:
-            duration=self._audio_duration(path); seg_root,manifest_path,manifest,_=ensure_manifest(out,path,duration,snapshot["options"].fps,{**export_settings,"preset_id":snapshot["template"].get("name","01_clean_bars"),"template":snapshot["template"]})
-            tracks.append({"audio":path,"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format,"duration":duration,"segment_root":str(seg_root),"segment_manifest":str(manifest_path),"segment_seconds":SEGMENT_SECONDS,"completed_segments":manifest.get("completed_segments",[]),"resume_settings":{"format":snapshot["options"].format,"resolution":"OVERLAY" if snapshot["options"].canvas_mode=="overlay" else self.resolution.currentText(),"width":snapshot["options"].width,"height":snapshot["options"].height,"canvas_mode":snapshot["options"].canvas_mode,"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"preset_id":snapshot["template"].get("name","01_clean_bars"),"template":snapshot["template"]},"resume_seconds":(manifest.get("next_segment",0)*SEGMENT_SECONDS)})
+        export_settings={"format":snapshot["options"].format,"resolution":"OVERLAY" if snapshot["options"].canvas_mode=="overlay" else self.resolution.currentText(),"width":snapshot["options"].width,"height":snapshot["options"].height,"canvas_mode":snapshot["options"].canvas_mode,"fps":snapshot["options"].fps,"quality":snapshot["options"].quality,"renderer":snapshot["options"].renderer,"ffmpeg_path":snapshot["options"].ffmpeg_path,"video_codec":snapshot["options"].video_codec,"include_audio":snapshot["options"].include_audio,"crf":snapshot["options"].crf}
+        durations=[self._audio_duration(path) for path in snapshot["audio_files"]]
+        set_duration=sum(durations)
+        source_folder=Path(snapshot["audio_files"][0]).parent if snapshot["audio_files"] else Path(out)
+        set_name=source_folder.name or "SET01"
+        output_name=f"{set_name}_WAVE{output_extension(snapshot["options"].format)}"
+        timeline_path=str(Path(out)/(Path(output_name).stem+"_timeline.json"))
+        tracks.append({"audio":snapshot["audio_files"][0],"set_audio_files":list(snapshot["audio_files"]),"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format,"duration":set_duration,"output_name":output_name,"timeline_path":timeline_path,"status":"pending"})
         job=JobSet(name=name,tracks=tracks,preset=snapshot["template"].get("name","01_clean_bars"),export=export_settings,output_dir=out)
         try:self.queue_manager.add(job);self.queue_panel.refresh();self.navigate_step(3);self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5");return True
         except ValueError as exc:self.status.setText(str(exc));QMessageBox.warning(self,"예약 작업",str(exc));return False
@@ -403,10 +409,11 @@ class MainWindow(QMainWindow):
         return self.current_output_dir if self.choose_output_dir() else ""
     def build_current_job_snapshot(self):
         output=self.current_output_dir
-        if self.canvas_mode.currentIndex()==0 and self.export_format.currentText() in ("webm","mov"):width,height=960,240
+        if self.canvas_mode.currentIndex()==0 and self.export_format.currentText()=="mp4":width,height=720,180
+        elif self.canvas_mode.currentIndex()==0 and self.export_format.currentText() in ("webm","mov"):width,height=960,240
         elif self.resolution.currentText()=="Custom":width,height=self.custom_width.value(),self.custom_height.value()
         else:width,height=map(int,self.resolution.currentText().split("x"))
-        fmt=self.export_format.currentText(); overlay=self.canvas_mode.currentIndex()==0 and fmt in ("webm","mov"); codec="png" if fmt=="mov" and overlay else "auto"; include_audio=False if fmt=="mov" and overlay else True; options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),fmt,self.ffmpeg_path.text() or None,"overlay" if overlay else "full",codec,include_audio)
+        fmt=self.export_format.currentText(); overlay=self.canvas_mode.currentIndex()==0; codec="h264" if fmt=="mp4" and overlay else ("png" if fmt=="mov" and overlay else "auto"); include_audio=False if overlay else True; options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),fmt,self.ffmpeg_path.text() or None,"overlay" if overlay else "full",codec,include_audio,27 if fmt=="mp4" and overlay else None)
         return {"audio_files":list(self.audio_files),"template":copy.deepcopy(self.template),"options":options,"output_dir":output,"skip_completed":self.skip_completed.isChecked()}
     def render(self):
         return self.render_now()

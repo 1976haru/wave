@@ -12,7 +12,7 @@ from render.quality import PRESETS
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
 @dataclass
 class ExportOptions:
-    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None;canvas_mode:str="full";video_codec:str="auto";include_audio:bool=True
+    width:int=1920;height:int=1080;fps:int=30;quality:str="BALANCED";renderer:str="AUTO";format:str="mp4";ffmpeg_path:str|None=None;canvas_mode:str="full";video_codec:str="auto";include_audio:bool=True;crf:int|None=None
     @classmethod
     def from_resolution(cls,resolution="1920x1080",**kwargs):
         width,height=RESOLUTIONS.get(resolution,(kwargs.pop("width",1920),kwargs.pop("height",1080)));return cls(width=width,height=height,**kwargs)
@@ -39,7 +39,7 @@ def build_ffmpeg_command(ffmpeg,output,options,audio,audio_start=0.0,audio_durat
         else: enc=["-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le"]
         if options.include_audio: enc += ["-c:a","pcm_s16le"]
         return common+["-progress","pipe:2","-nostats"]+enc+[str(output)]
-    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(preset["crf"])] + (["-c:a","aac"] if options.include_audio else []) + [str(output)]
+    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(options.crf if options.crf is not None else preset["crf"])] + (["-c:a","aac"] if options.include_audio else []) + [str(output)]
 def _hidden_process_kwargs():
     if os.name != "nt": return {"stdin": subprocess.PIPE, "stderr": subprocess.PIPE}
     flags=getattr(subprocess,"CREATE_NO_WINDOW",0)

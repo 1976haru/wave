@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout,QInputDialog,QLabel,QMessageBox,QPushButton,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QFrame
 from mws_queue.queue_manager import QueueManager
@@ -11,8 +11,9 @@ class QueuePanel(QWidget):
         while self.cards.count(): item=self.cards.takeAt(0); widget=item.widget(); widget and widget.deleteLater()
         self.table.setRowCount(len(self.manager.sets)); self.summary.setText(self.tr.tr("queue_count",count=len(self.manager.sets)))
         for row,item in enumerate(self.manager.sets):
-            card=QFrame(); box=QVBoxLayout(card); box.addWidget(QLabel(f"Set {row+1} | {item.name}")); box.addWidget(QLabel(f"Tracks: {item.total}    Duration: {item.display_duration}    Style: {item.preset}")); box.addWidget(QLabel(f"Output: {item.export.get('format','webm').upper()}    Status: {item.status}    Progress: {item.progress*100:.0f}%")); self.cards.addWidget(card)
-            for column,value in enumerate((item.name,str(item.total),item.display_duration,item.preset,item.export.get("format","webm"),item.status,f"{item.progress*100:.0f}%")): self.table.setItem(row,column,QTableWidgetItem(str(value)))
+            track_count=sum(len(t.get("set_audio_files",[])) or 1 for t in item.tracks)
+            card=QFrame(); box=QVBoxLayout(card); box.addWidget(QLabel(f"Set {row+1} | {item.name}")); box.addWidget(QLabel(f"Tracks: {track_count}    Duration: {item.display_duration}    Style: {item.preset}")); box.addWidget(QLabel(f"Output: {item.export.get('format','webm').upper()}    Status: {item.status}    Progress: {item.progress*100:.0f}%")); self.cards.addWidget(card)
+            for column,value in enumerate((item.name,str(track_count),item.display_duration,item.preset,item.export.get("format","webm"),item.status,f"{item.progress*100:.0f}%")): self.table.setItem(row,column,QTableWidgetItem(str(value)))
         self.start_button.setEnabled(bool(self.manager.sets)); self.changed.emit()
     def selected(self):
         rows=self.table.selectionModel().selectedRows(); return rows[0].row() if rows else (0 if self.manager.sets else -1)
