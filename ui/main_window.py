@@ -409,11 +409,11 @@ class MainWindow(QMainWindow):
         return self.current_output_dir if self.choose_output_dir() else ""
     def build_current_job_snapshot(self):
         output=self.current_output_dir
-        if self.canvas_mode.currentIndex()==0 and self.export_format.currentText()=="mp4":width,height=720,180
+        if self.canvas_mode.currentIndex()==0 and self.export_format.currentText()=="mp4":width,height=960,240
         elif self.canvas_mode.currentIndex()==0 and self.export_format.currentText() in ("webm","mov"):width,height=960,240
         elif self.resolution.currentText()=="Custom":width,height=self.custom_width.value(),self.custom_height.value()
         else:width,height=map(int,self.resolution.currentText().split("x"))
-        fmt=self.export_format.currentText(); overlay=self.canvas_mode.currentIndex()==0; codec="h264" if fmt=="mp4" and overlay else ("png" if fmt=="mov" and overlay else "auto"); include_audio=False if overlay else True; options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),fmt,self.ffmpeg_path.text() or None,"overlay" if overlay else "full",codec,include_audio,27 if fmt=="mp4" and overlay else None)
+        fmt=self.export_format.currentText(); overlay=self.canvas_mode.currentIndex()==0; codec="h264" if fmt=="mp4" and overlay else ("png" if fmt=="mov" and overlay else "auto"); include_audio=False if overlay else True; options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),fmt,self.ffmpeg_path.text() or None,"overlay" if overlay else "full",codec,include_audio,18 if fmt=="mp4" and overlay else None)
         return {"audio_files":list(self.audio_files),"template":copy.deepcopy(self.template),"options":options,"output_dir":output,"skip_completed":self.skip_completed.isChecked()}
     def render(self):
         return self.render_now()

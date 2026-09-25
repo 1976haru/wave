@@ -39,7 +39,10 @@ def build_ffmpeg_command(ffmpeg,output,options,audio,audio_start=0.0,audio_durat
         else: enc=["-c:v","prores_ks","-profile:v","4","-pix_fmt","yuva444p10le"]
         if options.include_audio: enc += ["-c:a","pcm_s16le"]
         return common+["-progress","pipe:2","-nostats"]+enc+[str(output)]
-    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v","libx264","-preset",preset["encoder_preset"],"-pix_fmt","yuv420p","-crf",str(options.crf if options.crf is not None else preset["crf"])] + (["-c:a","aac"] if options.include_audio else []) + [str(output)]
+    codec=options.video_codec.lower()
+    pixel_format="yuv444p" if codec in {"h264_444","yuv444p"} else ("rgb24" if codec in {"h264_rgb","libx264rgb"} else "yuv420p")
+    encoder="libx264rgb" if codec in {"h264_rgb","libx264rgb"} else "libx264"
+    return common+["-progress","pipe:2","-nostats","-vf","format=rgb24","-c:v",encoder,"-preset",preset["encoder_preset"],"-pix_fmt",pixel_format,"-crf",str(options.crf if options.crf is not None else preset["crf"])] + (["-c:a","aac"] if options.include_audio else []) + [str(output)]
 def _hidden_process_kwargs():
     if os.name != "nt": return {"stdin": subprocess.PIPE, "stderr": subprocess.PIPE}
     flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
