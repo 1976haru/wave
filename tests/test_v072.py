@@ -39,8 +39,8 @@ def test_automatic_analysis_after_audio_selection(window,monkeypatch,tmp_path):
     assert started and started[0][0]=="analysis" and window.current_step==1
 def test_style_selection_navigates_to_preview(window):
     item=window.template_list.item(0);window.apply_gallery(item);assert window.current_step==2
-def test_export_default_is_transparent_webm(window):
-    assert window.export_format.currentText()=="webm"
+def test_export_default_is_capcut_png_mov(window):
+    assert window.export_format.currentText()=="mov"
 def test_advanced_controls_are_hidden_by_default(window):
     assert [window.tabs.isTabVisible(i) for i in range(window.tabs.count())][1:4]==[False,False,False]
 def test_advanced_controls_can_be_revealed(window):
