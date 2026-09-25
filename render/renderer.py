@@ -69,7 +69,9 @@ def _stereo_signature_geometry(w,h,state,t,palette):
     left_raw=np.resize(state.get("left_values",smooth),half_count);right_raw=np.resize(state.get("right_values",smooth),half_count)
     left=np.clip(.82*smooth+.18*np.roll(left_raw,1)*(.82+.18*float(state.get("mid",.5))),0,1);right=np.clip(.78*smooth+.22*np.roll(right_raw,-1)*(.80+.20*float(state.get("bass",.5))),0,1)
     xs=np.linspace(center-width*.48,center-width*.035,half_count); xr=2*center-xs[::-1]; radius=float(t.get("dot_diameter",4.4))/2; gap=float(t.get("dot_gap",3.6)); limit=int(t.get("column_limit",7)); opacity=float(t.get("opacity",.97)); onset=float(state.get("onset",0)); tm=float(state.get("time",0)); dots=[]; lines=[]
-    intensity=str(t.get("intensity","NORMAL")).upper();amp_gain=1.28 if intensity=="DYNAMIC" else 1.0;onset_gain=1.24 if intensity=="DYNAMIC" else 1.0;secondary_gain=1.16 if intensity=="DYNAMIC" else 1.0
+    intensity=str(t.get("intensity","NORMAL")).upper()
+    intensity_gains={"NORMAL":(1.0,1.0,1.0),"DYNAMIC_SOFT":(1.20,1.15,1.15),"DYNAMIC":(1.30,1.27,1.20)}
+    amp_gain,onset_gain,secondary_gain=intensity_gains.get(intensity,intensity_gains["NORMAL"])
     flow_palette=[_hex(c) for c in t.get("flow_palette",["#FF4FA3","#B77CFF","#42D9FF"])]
     flow_period=max(5.0,float(t.get("color_flow_seconds",10.0)))
     def flow_color(position,offset=0):
@@ -81,7 +83,58 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             side=-1 if j%2==0 else 1; level=(j+1)//2
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
-    if variant=="twin_bloom_v2":
+    if variant=="tokyo_chill_signature":
+        # One continuous, deliberately non-uniform stereo field shared by all
+        # personalities.  The centre is never empty; personality changes the
+        # layer balance rather than replacing the brand silhouette.
+        personality=str(t.get("personality","DUAL")).upper(); count=max(43,int(t.get("bands",52)))
+        rhythm=np.resize(np.asarray([.82,.88,1.34,.86,1.08,.91,1.22],np.float32),count-1)
+        positions=np.r_[0,np.cumsum(rhythm)]; positions/=positions[-1]
+        xx=center-width*.5+positions*width
+        # Each stereo half receives the complete spectrum. This avoids the
+        # accidental "bass on the left, treble on the right" imbalance while
+        # delayed inputs and small gain differences keep it from being a copy.
+        local=np.abs(xx-center)/(width*.5); band_position=np.clip(local*(len(values)-1),0,len(values)-1)
+        source=np.interp(band_position,np.arange(len(values)),values)
+        left_source=np.interp(band_position,np.arange(len(left_raw)),left_raw)
+        right_source=np.interp(band_position,np.arange(len(right_raw)),right_raw)
+        stereo=np.where(xx<center,.87*source+.13*np.roll(left_source,1),(.85*source+.15*np.roll(right_source,-2))*.97)
+        centre_mix=np.exp(-((xx-center)/(width*.17))**2)
+        stereo=np.clip(stereo*(.96+.07*np.sin(np.arange(count)*1.37))+.055*centre_mix,0,1)
+        phase=np.linspace(-np.pi,np.pi,count); breathe=np.sin(phase*1.18+tm*.25)
+        if personality=="HIS":
+            scale=h*.325*amp_gain; curve=np.round((.15+.85*stereo)*8)/8; upper=base-scale*curve*(.58+.24*(np.arange(count)%7==0)); lower=base+scale*np.roll(curve,2)*(.40+.10*(np.arange(count)%5==0)); main_alpha=.88; fill_alpha=.075
+        elif personality=="HER":
+            scale=h*.285*amp_gain; curve=.16+.84*np.convolve(np.pad(stereo,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid"); upper=base-scale*curve+breathe*h*.018; lower=base+scale*np.roll(curve,2)*.78-breathe*h*.014; main_alpha=.92; fill_alpha=.115
+        else:
+            scale=h*.305*amp_gain; pull=.94+.08*np.sin(phase+tm*.38); curve=.16+.84*stereo; upper=base-scale*curve*pull+breathe*h*.010; lower=base+scale*np.roll(curve,1)*(.78+.08*np.cos(phase-tm*.31)); main_alpha=.94; fill_alpha=.10
+        # Layer A: connected upper/lower body with slow colour drift.
+        line(np.column_stack((xx,upper)),flow_color(.02),main_alpha,2,{"other":np.column_stack((xx,lower)),"color":flow_color(.38),"alpha":fill_alpha*secondary_gain})
+        line(np.column_stack((xx,lower)),flow_color(.62),.68 if personality!="HIS" else .76,2 if personality=="HER" else 1)
+        bridge=base+breathe*h*.009*(.45+.55*centre_mix)
+        line(np.column_stack((xx,bridge)),flow_color(.31),.34+.16*onset*onset_gain,1)
+        # Layer B: selective low-mid pillars; dense/sparse rhythm is fixed, not random.
+        for i,(x,v) in enumerate(zip(xx,stereo)):
+            selected=(i%4 in (0,1) and i%7!=3) or v>.72
+            if not selected: continue
+            emphasis=1.0+(personality=="HIS")*.22+(personality=="DUAL")*.06
+            height=scale*(.15+.52*v)*emphasis*(1.14 if i%9==0 else .72)
+            top=base-height; bottom=base+height*(.55 if personality!="HER" else .68)
+            color=p3 if v>.78 and i%9==0 else flow_color(i/max(1,count-1)*.84)
+            rr=radius*(1.18 if v>.68 else .82)
+            dot(x,top,rr,color,.94);dot(x,bottom,rr*.82,color,.70)
+            steps=min(limit,max(1,int(height/(radius*2+gap))))
+            for j in range(1,steps,2):
+                dot(x,base-j*(radius*2+gap),radius*.68,color,.70);dot(x,base+j*(radius*2+gap)*.62,radius*.58,color,.48)
+        # Layer C: sparse high shimmer and a short onset travel through centre.
+        shimmer=np.abs(stereo-np.roll(stereo,2)); peak_ids=np.flatnonzero((shimmer>.075)&(np.arange(count)%3==0))[:10]
+        for i in peak_ids:dot(xx[i],upper[i]-(3+5*shimmer[i]),radius*(.58+.48*stereo[i]),flow_color(i/count+.13),.62)
+        pulse=np.clip(onset*onset_gain-.16,0,1)
+        if pulse>0:
+            direction=-1 if int(tm*3)%2 else 1
+            for k in range(-3,4):
+                travel=k+direction*pulse*1.4; dot(center+travel*radius*3.4,base+np.sin(k*.72+tm)*h*.009,radius*(.72+.38*pulse-abs(k)*.035),flow_color(.43+k*.025),.38+.45*pulse)
+    elif variant=="twin_bloom_v2":
         gap_ratio=max(.055,.115-onset*onset_gain*.035);xl=np.linspace(center-width*.47,center-width*gap_ratio,half_count);xright=2*center-xl[::-1]
         env=np.sin(np.linspace(.08,np.pi-.08,half_count))**.72;left_body=np.clip((.20+.80*left)*env,0,1);right_body=np.clip((.20+.80*right)*env[::-1],0,1);scale=h*.285*amp_gain
         lu=base-left_body*scale;ld=base+np.roll(left_body,1)*scale*.82;ru=base-right_body*scale*.94;rd=base+np.roll(right_body,-1)*scale*.88
