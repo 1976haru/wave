@@ -20,7 +20,7 @@ def test_builtin_preset_metadata_and_unique_ids():
     for path, data in entries:
         ids.append(data.get("id", path.stem))
         assert data.get("name_en") or data.get("name")
-        assert data.get("renderer") in {"bars", "line", "dot", "ribbon", "ring", "radial", "dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots"}
+        assert data.get("renderer") in {"bars", "line", "dot", "ribbon", "ring", "radial", "dot_matrix", "twin_dot_matrix", "dot_line_hybrid", "echo_dots", "stereo_signature"}
         assert data.get("category", "legacy")
     assert len(ids) == len(set(ids))
 
@@ -34,7 +34,7 @@ def test_builtin_presets_validate_json_utf8():
 def test_gallery_recommended_and_all_filters(qapp):
     window = MainWindow()
     assert window.template_filter.currentText()
-    assert window.template_list.count() == 6
+    assert window.template_list.count() == 9
     window.template_filter.setCurrentText("전체 스타일")
     assert window.template_list.count() >= 30
     window.close()

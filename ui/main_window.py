@@ -318,7 +318,7 @@ class MainWindow(QMainWindow):
         recommended={"01_clean_bars","10_warm_cream_line","18_tokyo_neon","28_paris_thin_line","31_blue_jazz","42_glass_spectrum","signature_dual_together","signature_his_midnight","signature_her_silk"}
         for path,data in getattr(self,"template_entries",[]):
             category=str(data.get("category","")).lower(); ident=str(data.get("id",path.stem))
-            if mode=="CHILL RAP SIGNATURE" and category!="chill_rap_signature": continue
+            if mode=="CHILL RAP SIGNATURE" and (category!="chill_rap_signature" or not data.get("signature_category")): continue
             if mode in {"추천 스타일","\ucd94\ucc9c \uC2A4\ud0c0\uc77c"} and ident not in recommended: continue
             if mode=="\uc2dc\ub2c8\uc5b4" and category!="senior": continue
             if mode=="Tokyo Chill" and category!="tokyo_chill": continue
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
             if self.template_filter.currentIndex()==8 and category!="signature_his": continue
             if self.template_filter.currentIndex()==9 and category!="signature_her": continue
             label=data.get("name_ko",data.get("name_en",data.get("name","Style")))
-            badge="★ 대표\n" if data.get("signature_tier")=="MAIN" else ""
+            badge="★ v0.8.3.1 추천\n" if data.get("recommended") else ("대표\n" if data.get("signature_tier")=="MAIN" else "")
             item=QListWidgetItem(badge+str(label));item.setToolTip(f"{data.get('name_en',data.get('name',''))} | {data.get('category','')}");item.setData(Qt.UserRole,str(path));thumb_path,_=get_thumbnail(dict(data,glow=False));item.setIcon(QIcon(str(thumb_path)));self.template_list.addItem(item)
     def apply_gallery(self,item):self.template=load_template(item.data(Qt.UserRole));self.sync_controls();self.debounce.start();self.navigate_step(2)
     def save_my_template(self):

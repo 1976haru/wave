@@ -18,7 +18,7 @@ def gradient_colors(template,count):
 def _geometry(w,h,values,t):
     usable=max(1,int(w*float(t.get("width",.72))));x0=(w-usable)//2;step=usable/max(1,len(values));base={"top":int(h*.18),"center":int(h*.5),"bottom":int(h*.82)}.get(t.get("position","bottom"),int(h*.82));maximum=max(1,int(h*float(t.get("height",.22))));gap=np.clip(float(t.get("gap",.45)),0,.95);width=max(1,int(step*float(t.get("bar_width",1-gap))));return x0,step,base,maximum,width
 
-SIGNATURE_STYLES={"dot_matrix","twin_dot_matrix","dot_line_hybrid","echo_dots"}
+SIGNATURE_STYLES={"dot_matrix","twin_dot_matrix","dot_line_hybrid","echo_dots","stereo_signature"}
 
 def _hex(value):
     if isinstance(value,(tuple,list,np.ndarray)): return tuple(map(int,value))
@@ -32,13 +32,15 @@ def signature_instances(w,h,state,t):
     values=np.asarray(state["values"],np.float32); n=len(values); style=str(t.get("renderer")).lower()
     usable=w*float(t.get("width",.68)); x0=(w-usable)/2+w*float(t.get("x_offset",0)); base=h*float(t.get("baseline_y",.5)); max_rows=max(1,int(t.get("column_limit",8)))
     radius=float(t.get("dot_diameter",4.5))/2; gap=float(t.get("dot_gap",4.0)); pitch=max(radius*2+gap,usable/max(1,n)); xs=x0+(np.arange(n)+.5)*usable/n
-    primary=_hex(t.get("color","#FFFFFF")); secondary=_hex(t.get("secondary_color",t.get("color","#FFFFFF"))); accent=_hex(t.get("accent_color",secondary)); opacity=float(t.get("opacity",1)); dots=[]
+    primary=_hex(t.get("color","#FFFFFF")); secondary=_hex(t.get("secondary_color",t.get("color","#FFFFFF"))); accent=_hex(t.get("accent_color",secondary)); highlight=_hex(t.get("highlight_color",accent)); opacity=float(t.get("opacity",1)); dots=[]
     def add_column(x,v,index,color=primary,lean=0.0):
         rows=max(1,min(max_rows,int(np.ceil(float(v)*max_rows))))
         for row in range(rows):
             side=-1 if row%2==0 else 1; level=(row+1)//2 if row else 0
             y=base+side*level*(radius*2+gap)
             dots.append((x+lean*level,y,radius,color,opacity*(.72+.28*(row+1)/rows)))
+    if style=="stereo_signature":
+        return _stereo_signature_geometry(w,h,state,t,(primary,secondary,accent,highlight))
     if style=="twin_dot_matrix":
         half=n//2; center=w/2; interaction=float(t.get("interaction_strength",.35))*float(state.get("onset",0)); spread=usable*.47
         for i,v in enumerate(values[:half]): add_column(center-spread+(i+.5)*spread/half+interaction*usable*.025,v*(1+.08*float(state.get("mid",0))),i,primary,.10)
@@ -57,6 +59,84 @@ def signature_instances(w,h,state,t):
             for echo,fade in ((1,.24),(2,.11)):
                 for i in np.flatnonzero(values>.62): dots.append((xs[i]+direction[i]*pitch*echo,base,radius*(1-.12*echo),secondary,opacity*fade*strength))
     return dots,None
+
+def _stereo_signature_geometry(w,h,state,t,palette):
+    """Nine art-directed stereo signatures sharing one CPU/GPU geometry path."""
+    values=np.asarray(state["values"],np.float32); variant=str(t.get("signature_variant","twin_bloom")); p0,p1,p2,p3=palette
+    center=w*.5; base=h*float(t.get("baseline_y",.5)); width=w*float(t.get("width",.76)); half_count=max(12,len(values)//2)
+    raw=np.resize(values,half_count); smooth=np.convolve(np.pad(raw,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid")
+    # Both halves share musical intent but retain an 8% conversational offset.
+    left=np.clip(.92*smooth+.08*np.roll(smooth,2)*float(state.get("mid",.5)),0,1); right=np.clip(.90*smooth+.10*np.roll(smooth,-2)*float(state.get("bass",.5)),0,1)
+    xs=np.linspace(center-width*.48,center-width*.035,half_count); xr=2*center-xs[::-1]; radius=float(t.get("dot_diameter",4.4))/2; gap=float(t.get("dot_gap",3.6)); limit=int(t.get("column_limit",7)); opacity=float(t.get("opacity",.97)); onset=float(state.get("onset",0)); tm=float(state.get("time",0)); dots=[]; lines=[]
+    def dot(x,y,r,color,alpha=opacity):dots.append((float(x),float(y),float(r),color,float(alpha)))
+    def column(x,v,color,outward=1,scale=1):
+        rows=max(1,min(limit,int(np.ceil((.18+.82*v)*limit*scale))))
+        for j in range(rows):
+            side=-1 if j%2==0 else 1; level=(j+1)//2
+            dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
+    def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
+    if variant=="twin_bloom":
+        for i,(x,v) in enumerate(zip(xs,left)):
+            bloom=max(np.exp(-((i-half_count*.22)/(half_count*.13))**2),np.exp(-((i-half_count*.72)/(half_count*.12))**2))
+            if i%2==0 or bloom>.62:column(x,v,p0 if i<half_count*.58 else p2,scale=.38+.52*bloom)
+            else:dot(x,base,radius*.72,p2,.54)
+        for i,(x,v) in enumerate(zip(xr,right)):
+            bloom=max(np.exp(-((i-half_count*.22)/(half_count*.13))**2),np.exp(-((i-half_count*.72)/(half_count*.12))**2))
+            if i%2==0 or bloom>.62:column(x,v,p1 if i>=half_count*.42 else p2,scale=.38+.52*bloom)
+            else:dot(x,base,radius*.72,p2,.54)
+        bridge=.10+.32*onset
+        for k in range(5):
+            angle=(k-2)*.42; dot(center+(k-2)*radius*3,base-np.cos(angle)*bridge*h*.12,radius*(1.08-abs(k-2)*.08),p2,.58+onset*.3)
+        y=base-np.sin(np.linspace(0,np.pi,half_count*2))*(.05+.055*onset)*h
+        line(np.column_stack((np.r_[xs,xr],y)),p3,.42,1)
+    elif variant=="crossfade_conversation":
+        allx=np.r_[xs,xr]; energy=np.r_[left,right]
+        phase=np.linspace(-np.pi,np.pi,len(allx)); amp=h*(.035+.075*energy)
+        upper=base+np.sin(phase+tm*.45)*amp; lower=base-np.sin(phase-tm*.38)*amp
+        line(np.column_stack((allx,upper)),p0,.88,2);line(np.column_stack((allx,lower)),p1,.84,2)
+        for i in range(2,len(allx)-2,4):
+            color=p2 if abs(allx[i]-center)<width*.16 else (p0 if allx[i]<center else p1);dot(allx[i],(upper[i]+lower[i])*.5,radius*(1+.35*energy[i]),color,.84)
+    elif variant=="echo_dialogue":
+        anchors=(center-width*.25,center+width*.25)
+        for side,(anchor,vals,color) in enumerate(((anchors[0],left,p0),(anchors[1],right,p1))):
+            for i,v in enumerate(vals[::2]):
+                direction=1 if side==0 else -1; x=anchor+direction*i*width*.22/(half_count/2); column(x,v,color,scale=.72)
+                if v>.52:
+                    for echo,fade in ((1,.34),(2,.17),(3,.08)):dot(x-direction*echo*radius*3.2,base,radius*(1-.1*echo),p2,fade*opacity)
+        line([(anchors[0],base),(center-width*.04,base),(center+width*.04,base),(anchors[1],base)],p3,.46,1)
+    elif variant=="urban_stereo_pulse":
+        for i,(xl,xright,v1,v2) in enumerate(zip(xs,xr,left,right)):
+            if i%3==0 or max(v1,v2)>.68:column(xl,v1,p0 if i%6 else p2,scale=.82);column(xright,v2,p1 if i%6 else p2,scale=.82)
+            else:dot(xl,base,radius*.72,p1,.58);dot(xright,base,radius*.72,p1,.58)
+        line([(xs[0],base),(xr[-1],base)],p3,.48,1)
+    elif variant=="midnight_mirror_grid":
+        for i,(xl,xright,v) in enumerate(zip(xs,xr,(left+right)*.5)):
+            strength=v*(1 if i%4 in (0,1) else .48);column(xl,strength,p0 if i%5 else p2,scale=.9);column(xright,strength,p1 if i%5 else p2,scale=.9)
+        edge=h*(.025+.055*onset);line([(xs[0],base-edge),(xs[0],base+edge)],p3,.72,2);line([(xr[-1],base-edge),(xr[-1],base+edge)],p3,.72,2)
+    elif variant=="blue_structure_wave":
+        allx=np.r_[xs,xr]; e=np.r_[left,right]; angular=np.round(e*5)/5
+        y1=base-h*(.025+.072*angular);y2=base+h*(.018+.052*np.roll(angular,2))
+        line(np.column_stack((allx,y1)),p0,.92,2);line(np.column_stack((allx,y2)),p1,.70,1)
+        for i in range(0,len(allx),5):dot(allx[i],y1[i],radius*(1+.25*e[i]),p2,.88)
+    elif variant=="silk_mirror_ribbon":
+        allx=np.r_[xs,xr]; e=np.r_[left,right]; wave=np.sin(np.linspace(-np.pi,np.pi,len(allx))+tm*.22)
+        upper=base-h*(.028+.062*e)+wave*h*.012;lower=base+h*(.028+.052*np.roll(e,2))-wave*h*.01
+        line(np.column_stack((allx,upper)),p0,.76,2,{"other":np.column_stack((allx,lower)),"color":p1,"alpha":.20});line(np.column_stack((allx,lower)),p2,.72,1)
+        for i in range(3,len(allx),7):dot(allx[i],upper[i],radius*(1.05+.25*e[i]),p3,.88)
+    elif variant=="pearl_stereo_bloom":
+        for side,(xx,vv,main) in enumerate(((xs,left,p0),(xr,right,p1))):
+            for i,(x,v) in enumerate(zip(xx,vv)):
+                if i%2==0 or v>.62:
+                    column(x,v,main if i%5 else p2,scale=.74)
+                    if v>.55:dot(x,base-(.018+.045*v)*h,radius*1.25,p3,.9)
+        line([(xs[0],base),(center-width*.04,base)],p2,.32,1);line([(center+width*.04,base),(xr[-1],base)],p2,.32,1)
+    else: # lavender_breathing_line
+        allx=np.r_[xs,xr]; e=np.r_[left,right]; breath=.72+.18*np.sin(tm*.75)
+        y1=base-h*(.018+.055*e*breath);y2=base+h*(.016+.042*np.roll(e,3)*breath)
+        line(np.column_stack((allx,y1)),p0,.88,2);line(np.column_stack((allx,y2)),p1,.64,1)
+        for i in np.flatnonzero((e>.52)&(e>=np.roll(e,1))&(e>=np.roll(e,-1))):
+            dot(allx[i],y1[i],radius*1.22,p3,.94);dot(2*center-allx[i],base+(base-y1[i])*.72,radius*.88,p2,.58)
+    return dots,lines
 
 def build_line_vertices(w,h,values,template,mirror=False):
     """Return a connected miter-style triangle strip in pixel coordinates."""
@@ -118,8 +198,14 @@ class CPURenderer:
                     cv2.fillPoly(rgb,contours(halo_scale),color,lineType=cv2.LINE_AA); cv2.fillPoly(alpha,contours(halo_scale),int(255*halo),lineType=cv2.LINE_AA)
                 cv2.fillPoly(rgb,contours(1),color,lineType=cv2.LINE_AA); cv2.fillPoly(alpha,contours(1),int(255*max(d[4] for d in selected)),lineType=cv2.LINE_AA)
                 dots=original
-        if line is not None and len(line)>1:
-            color=_hex(t.get("line_color",t.get("color","#FFFFFF"))); pts=line.astype(np.int32).reshape((-1,1,2)); cv2.polylines(rgb,[pts],False,color,max(1,int(t.get("line_thickness",1))),cv2.LINE_AA);cv2.polylines(alpha,[pts],False,int(255*float(t.get("baseline_strength",.72))),max(1,int(t.get("line_thickness",1))),cv2.LINE_AA)
+        if line is not None:
+            layers=line if isinstance(line,list) else [{"points":line,"color":_hex(t.get("line_color",t.get("color","#FFFFFF"))),"alpha":float(t.get("baseline_strength",.72)),"thickness":int(t.get("line_thickness",1))}]
+            for layer in layers:
+                points=layer["points"]; color=layer["color"]; strength=float(layer.get("alpha",.72));thickness=max(1,int(layer.get("thickness",1)));fill=layer.get("fill")
+                if fill:
+                    other=fill["other"];poly=np.vstack((points,other[::-1])).astype(np.int32);fill_strength=float(fill.get("alpha",.18));fill_color=tuple(int(c*fill_strength) for c in fill.get("color",color));fill_alpha=int(255*fill_strength);cv2.fillPoly(rgb,[poly],fill_color,lineType=cv2.LINE_AA);cv2.fillPoly(alpha,[poly],fill_alpha,lineType=cv2.LINE_AA)
+                if len(points)>1:
+                    pts=points.astype(np.int32).reshape((-1,1,2));cv2.polylines(rgb,[pts],False,color,thickness,cv2.LINE_AA);cv2.polylines(alpha,[pts],False,int(255*strength),thickness,cv2.LINE_AA)
     def _draw_special(self, cv2, rgb, alpha, values, colors, w, h, base, maximum, bw, template, style, opacity):
         n=len(values); center=(w//2,h//2); mirror=bool(template.get("mirror")); thickness=max(1,int(template.get("bar_width",.55)*max(2,bw)))
         if style=="ribbon":
@@ -192,8 +278,12 @@ void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=ve
             count=len(rects); rb=np.asarray(rects,"f4"); cb=np.asarray(colors,"f4")
             if count>self._instance_capacity: raise RuntimeError("signature instance capacity exceeded")
             self._rect_buffer.write(rb.tobytes()); self._color_buffer.write(cb.tobytes()); vao=self.ctx.vertex_array(self.shape_program,[(self.quad,"2f","corner"),(self._rect_buffer,"4f/i","rect"),(self._color_buffer,"3f/i","instance_color")]); self.shape_program["viewport"].value=(w,h); self.shape_program["opacity"].value=1.0; self.shape_program["shape"].value=1; self.shape_program["roundness"].value=1.0; vao.render(self.gl.TRIANGLE_STRIP,instances=count); vao.release()
-        if line is not None and len(line)>1:
-            color=np.asarray(_hex(t.get("line_color",t.get("color","#FFFFFF"))),np.float32)/255; verts=np.column_stack((line,np.tile(color,(len(line),1)))).astype("f4"); buf=self.ctx.buffer(verts.tobytes()); vao=self.ctx.vertex_array(self.special_program,[(buf,"2f 3f","position","vertex_color")]); self.special_program["viewport"].value=(w,h); self.special_program["opacity"].value=float(t.get("baseline_strength",.72)); vao.render(self.gl.LINE_STRIP); vao.release(); buf.release()
+        if line is not None:
+            layers=line if isinstance(line,list) else [{"points":line,"color":_hex(t.get("line_color",t.get("color","#FFFFFF"))),"alpha":float(t.get("baseline_strength",.72))}]
+            for layer in layers:
+                points=layer["points"]
+                if len(points)<2:continue
+                color=np.asarray(layer["color"],np.float32)/255;verts=np.column_stack((points,np.tile(color,(len(points),1)))).astype("f4");buf=self.ctx.buffer(verts.tobytes());vao=self.ctx.vertex_array(self.special_program,[(buf,"2f 3f","position","vertex_color")]);self.special_program["viewport"].value=(w,h);self.special_program["opacity"].value=float(layer.get("alpha",.72));vao.render(self.gl.LINE_STRIP);vao.release();buf.release()
     def _draw_line(self,w,h,values,t):
         for mirror in ([False,True] if t.get("mirror") else [False]):
             vertices=build_line_vertices(w,h,values,t,mirror)
