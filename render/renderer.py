@@ -103,7 +103,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         stereo=np.clip(stereo*(.96+.07*np.sin(np.arange(count)*1.37))+.055*centre_mix,0,1)
         phase=np.linspace(-np.pi,np.pi,count); breathe=np.sin(phase*1.18+tm*.25)
         if personality=="HIS":
-            scale=h*.325*amp_gain; curve=np.round((.15+.85*stereo)*8)/8; upper=base-scale*curve*(.58+.24*(np.arange(count)%7==0)); lower=base+scale*np.roll(curve,2)*(.40+.10*(np.arange(count)%5==0)); main_alpha=.88; fill_alpha=.075
+            scale=h*.325*amp_gain; curve=.15+.85*stereo; upper=base-scale*curve*(.58+.24*(np.arange(count)%7==0)); lower=base+scale*np.roll(curve,2)*(.40+.10*(np.arange(count)%5==0)); main_alpha=.88; fill_alpha=.075
         elif personality=="HER":
             scale=h*.285*amp_gain; curve=.16+.84*np.convolve(np.pad(stereo,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid"); upper=base-scale*curve+breathe*h*.018; lower=base+scale*np.roll(curve,2)*.78-breathe*h*.014; main_alpha=.92; fill_alpha=.115
         else:

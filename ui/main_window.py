@@ -237,8 +237,9 @@ class MainWindow(QMainWindow):
         set_name=source_folder.name or "SET01"
         output_name=f"{set_name}_WAVE{output_extension(snapshot["options"].format)}"
         timeline_path=str(Path(out)/(Path(output_name).stem+"_timeline.json"))
-        tracks.append({"audio":snapshot["audio_files"][0],"set_audio_files":list(snapshot["audio_files"]),"preset":snapshot["template"].get("name","01_clean_bars"),"format":snapshot["options"].format,"duration":set_duration,"output_name":output_name,"timeline_path":timeline_path,"status":"pending"})
-        job=JobSet(name=name,tracks=tracks,preset=snapshot["template"].get("name","01_clean_bars"),export=export_settings,output_dir=out)
+        preset_ref=snapshot["template"].get("id",snapshot["template"].get("name","01_clean_bars"))
+        tracks.append({"audio":snapshot["audio_files"][0],"set_audio_files":list(snapshot["audio_files"]),"preset":preset_ref,"format":snapshot["options"].format,"duration":set_duration,"output_name":output_name,"timeline_path":timeline_path,"status":"pending"})
+        job=JobSet(name=name,tracks=tracks,preset=preset_ref,export=export_settings,output_dir=out)
         try:self.queue_manager.add(job);self.queue_panel.refresh();self.navigate_step(3);self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5");return True
         except ValueError as exc:self.status.setText(str(exc));QMessageBox.warning(self,"예약 작업",str(exc));return False
     def start_queue(self):

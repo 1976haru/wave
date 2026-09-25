@@ -9,9 +9,10 @@ def resolve_template(value):
     path=Path(str(value))
     if path.is_file():return load_template(path)
     slug=str(value).lower().replace(" ","_")
-    candidates=list(resource_path("templates").glob("*.json"))
-    for candidate in candidates:
-        template=load_template(candidate)
+    candidates=list(resource_path("templates").glob("*.json"));loaded=[(candidate,load_template(candidate)) for candidate in candidates];loaded.sort(key=lambda item:0 if item[1].get("signature_tier")=="FINAL" else 1)
+    for candidate,template in loaded:
+        if slug==str(template.get("id","")).lower() or slug in {str(x).lower() for x in template.get("legacy_aliases",[])}:return template
+    for candidate,template in loaded:
         aliases={candidate.stem.lower(),str(template.get("name","")).lower().replace(" ","_"),str(template.get("id","")).lower()}
         if slug in aliases or candidate.stem.endswith(slug):return template
     raise FileNotFoundError(f"Template not found: {value}")

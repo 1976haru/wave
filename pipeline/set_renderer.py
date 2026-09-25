@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, math, subprocess, threading, time
+import json, logging, math, subprocess, threading, time
 from pathlib import Path
 from audio.analyzer import AnalysisSettings, analyze_file
 from animation.engine import AnimationEngine
@@ -20,6 +20,7 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
     files = [Path(p) for p in audio_files]
     if not files: raise ValueError("SET에 음원이 없습니다.")
     preset = PRESETS[options.quality]
+    logging.info("SET signature stable_preset=%s renderer=%s personality=%s intensity=%s layers=A:main,B:pillars,C:shimmer canvas=%sx%s input_count=%s",template.get("id"),template.get("renderer"),template.get("personality"),template.get("intensity"),options.width,options.height,len(files))
     render_template = dict(template, _quality=options.quality, _glow_scale=preset["glow_scale"], _blur_scale=preset["blur_scale"])
     entries=[]; total_seconds=0.0
     for path in files:
@@ -44,12 +45,15 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
             if ev and progress_detail: progress_detail(ev)
     reader=threading.Thread(target=drain,daemon=True); reader.start(); engines=[AnimationEngine(e["features"],render_template) for e in entries]; renderer=RendererFactory.create(options.renderer,render_template); started=time.perf_counter()
     try:
-        current=0
+        current=0;last_state=None
         for frame_index in range(total_frames):
             if cancel and cancel(): raise InterruptedError("SET 렌더가 중단되었습니다.")
-            while current+1<len(entries) and frame_index>=entries[current+1]["start_frame"]: current+=1
+            while current+1<len(entries) and frame_index>=entries[current+1]["start_frame"]:
+                current+=1
+                if last_state is not None:engines[current].prev=last_state["values"].copy()
             e=entries[current]; local=max(0,frame_index-e["start_frame"])/options.fps
-            frame=renderer.render_rgba(options.width,options.height,engines[current].sample(local),render_template)
+            state=engines[current].sample(local,absolute_seconds=frame_index/options.fps);last_state=state
+            frame=renderer.render_rgba(options.width,options.height,state,render_template)
             proc.stdin.write(memoryview(frame))
             if progress_detail:
                 progress_detail({"percent":(frame_index+1)/total_frames*100.0,"set_track_index":current+1,"set_track_total":len(entries),"frame":frame_index+1,"fps":(frame_index+1)/max(time.perf_counter()-started,1e-6),"file":Path(e["path"]).name})
