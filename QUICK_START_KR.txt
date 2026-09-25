@@ -1,12 +1,11 @@
-﻿Music Wave Studio v0.8.2.9 1분 요약
+﻿Music Wave Studio v0.8.3.0 BETA
 
-1. exe 실행
-2. 음원 폴더 선택
-3. 대표 시그니처 선택
-4. 미리보기 → 대기열에 추가
-5. 작업 시작
-6. 결과 MP4를 CapCut에 올리고 혼합(Screen)
+1. ZIP 압축 풀기
+2. MusicWaveStudio_v0.8.3.0.exe 실행
+3. 음원 폴더 선택
+4. 시그니처 선택
+5. 대기열에 추가 → 작업 시작
+6. 결과 MP4를 CapCut 위 트랙에 배치
+7. 혼합(Blend) → Screen(스크린)
 
-그와 그녀: Dual Dialogue / Together Signal / Crossfade Hearts
-그의 이야기: Midnight Stance / Window Line / Urban Strip
-그녀의 이야기: Pearl Afterglow / Blooming Pulse / Silk Ribbon
+샘플은 sample_assets/sample_music_set 폴더에 있습니다.

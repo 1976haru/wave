@@ -1,4 +1,4 @@
-﻿import argparse,json,os,sys,tempfile
+import argparse,json,logging,os,sys,tempfile
 from pathlib import Path
 from core.version import get_version,build_info
 def parse_args(argv=None):
@@ -49,7 +49,14 @@ def packaged_smoke(window,application):
             QTimer.singleShot(50,poll_reference);return
         except Exception as exc:report.update({"reference_status":"failed","reference_error":repr(exc)})
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8");QTimer.singleShot(50,application.quit)
+def _configure_logging():
+    root=Path(os.environ.get("LOCALAPPDATA",Path.home()))/"MusicWaveStudio"/"logs"
+    root.mkdir(parents=True,exist_ok=True)
+    logging.basicConfig(filename=str(root/"music_wave_studio.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
+    logging.info("Music Wave Studio version=%s executable=%s",get_version(),sys.executable)
+
 def main(argv=None):
+    _configure_logging()
     args=parse_args(argv)
     if args.headless:
         result=_headless(args);print(json.dumps(result,ensure_ascii=False));return 0 if not result["failed"] else 2
