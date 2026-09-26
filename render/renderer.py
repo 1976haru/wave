@@ -121,7 +121,8 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             structure=.95+.065*np.sin(np.arange(count)*1.21)+.035*np.cos(phase*1.7)
             personality_gain=1.0; minimum=.070
         drive=np.clip(.66+.26*float(state.get("bass",.5))+.22*float(state.get("mid",.5))+.34*onset*onset_gain,.65,1.35)
-        height_ratio=np.clip(minimum+(1-minimum)*energy*drive*personality_gain*structure,minimum,.98)
+        intensity_ceiling={"NORMAL":.82,"DYNAMIC_SOFT":.90,"DYNAMIC":.98}.get(intensity,.82)
+        height_ratio=np.clip(minimum+(1-minimum)*energy*drive*personality_gain*structure*amp_gain,minimum,intensity_ceiling)
         heights=available*height_ratio
         upper=np.maximum(top_margin,base-heights)
 
@@ -138,6 +139,17 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             next_color=smooth_palette[(palette_index+1)%len(smooth_palette)]
             palette_steps.append(tuple(map(int,palette_color)))
             palette_steps.append(mix_color(palette_color,next_color,.5))
+        render_palette=list(dict.fromkeys(palette_steps+[p0,p1,p2,p3]))
+        render_palette_array=np.asarray(render_palette,np.float32)
+        quantized_cache={color:color for color in render_palette}
+        def quantized_color(color):
+            color=tuple(color)
+            cached=quantized_cache.get(color)
+            if cached is not None: return cached
+            delta=render_palette_array-np.asarray(color,np.float32)
+            result=render_palette[int(np.argmin(np.sum(delta*delta,axis=1)))]
+            quantized_cache[color]=result
+            return result
         def moving_color(position,offset=0):
             phase=((position+tm/flow_period+offset)%1.0)*len(palette_steps)
             return palette_steps[int(phase)%len(palette_steps)]
@@ -150,10 +162,10 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             identity=identity_color(i)
             moving=moving_color(position*.72+v*.18+onset*.08,vertical*.045)
             signal=v+onset*.25
-            if vertical<.34 and signal<.62: return identity
-            if vertical<.72 and signal<.78: return mix_color(identity,moving,.5)
-            if vertical>.90 and (v>.58 or onset>.35): return mix_color(moving,p3,.35)
-            return moving
+            if vertical<.34 and signal<.62: return quantized_color(identity)
+            if vertical<.72 and signal<.78: return quantized_color(mix_color(identity,moving,.5))
+            if vertical>.90 and (v>.58 or onset>.35): return quantized_color(mix_color(moving,p3,.35))
+            return quantized_color(moving)
 
         # Layer A: fixed baseline and moving TOP envelope only.
         baseline_alpha=float(t.get("baseline_alpha",.48))
@@ -170,7 +182,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         # Layer B: upward-only dotted pillars.  Every column starts at the same floor.
         # Dot spacing is distributed over the full height so tall peaks really reach the top.
         for i,(x,v,height) in enumerate(zip(xx,energy,heights)):
-            base_color=mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v)
+            base_color=quantized_color(mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v))
             dot(x,base,radius*.58,base_color,.48)
             selected=(i%2==0) or v>.24 or (personality=="HIS" and i%3==0)
             if not selected: continue

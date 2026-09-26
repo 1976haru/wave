@@ -66,7 +66,7 @@ def test_reactive_palette_stays_cpu_friendly():
         _,dots,_,_,_=geometry(template,.82,.75,4.0)
         colors={d[3] for d in dots}
         assert 6<=len(colors)<=32
-\ndef test_final_templates_use_floor_anchor_parameters():
+def test_final_templates_use_floor_anchor_parameters():
     for template in templates():
         assert template["version"]=="0.8.3.6"
         assert .80<=float(template["anchor_y"])<=.84
