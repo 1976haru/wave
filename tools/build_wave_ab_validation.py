@@ -18,9 +18,9 @@ from core.ffmpeg import resolve_ffmpeg
 
 
 PRESETS = {
-    "HIS": "HIS_v0837_preview.mp4",
-    "DUAL": "DUAL_v0837_preview.mp4",
-    "HER": "HER_v0837_preview.mp4",
+    "HIS": "HIS_v0838_preview.mp4",
+    "DUAL": "DUAL_v0838_preview.mp4",
+    "HER": "HER_v0838_preview.mp4",
 }
 BACKGROUNDS = {
     "bright": ROOT / "sample_assets/background/v0833_daytime_romantic_fixture.png",
@@ -129,7 +129,7 @@ def write_report(output: Path, results: dict, seconds: float) -> None:
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip() or "unknown"
     lines = [
         "Tokyo Chill Composition Review", "",
-        "version: 0.8.3.7", f"commit: {commit}", "resolution: 1920x1080", "fps: 24",
+        "version: 0.8.3.8", f"commit: {commit}", "resolution: 1920x1080", "fps: 24",
         f"duration: {seconds:.1f}s", "composition mode: screen-like blend over local copyright-safe fixtures", "",
     ]
     mode_notes = {
@@ -159,7 +159,7 @@ def build(seconds: float, source_dir: Path, output: Path) -> dict:
     for name, source_name in PRESETS.items():
         source = source_dir / source_name
         if not source.exists():
-            raise FileNotFoundError(f"Missing v0.8.3.7 preview: {source}")
+            raise FileNotFoundError(f"Missing v0.8.3.8 preview: {source}")
         wave = output / f"{name}_wave_only.mp4"
         shutil.copy2(source, wave)
         compositions = {}
@@ -183,7 +183,7 @@ def build(seconds: float, source_dir: Path, output: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build Tokyo Chill waveform/composition A/B review assets")
     parser.add_argument("--seconds", type=float, default=24.0)
-    parser.add_argument("--source-dir", type=Path, default=ROOT / "validation_results/v0837_sparse_neon")
+    parser.add_argument("--source-dir", type=Path, default=ROOT / "validation_results/v0838_premium_neon_dots")
     parser.add_argument("--output", type=Path, default=ROOT / "validation_results/tokyo_chill_composition_review")
     parser.add_argument("--all", action="store_true", help="Build all stable Tokyo Chill signatures (default behavior)")
     args = parser.parse_args()

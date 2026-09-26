@@ -84,7 +84,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
     if variant=="tokyo_chill_signature":
-        # v0.8.3.7 SPARSE NEON signature:
+        # v0.8.3.8 PREMIUM NEON DOTS signature:
         # the lower edge is visually fixed while all musical energy grows upward.
         # Height and colour both react to the same energy/onset signal.
         personality=str(t.get("personality","DUAL")).upper(); count=max(25,int(t.get("bands",35)))
@@ -164,44 +164,50 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             if vertical>.90 and (v>.58 or onset>.35): return quantized_color(mix_color(moving,p3,.35))
             return quantized_color(moving)
 
-        # Layer A: fixed baseline and moving TOP envelope only.
+        # Layer A: fixed baseline only.  There is deliberately no top contour,
+        # ribbon, or polyline: peak height is expressed exclusively by light.
         baseline_alpha=float(t.get("baseline_alpha",.48))
         left_mask=np.flatnonzero(xx<=center); right_mask=np.flatnonzero(xx>=center)
         if len(left_mask)>1: line(np.column_stack((xx[left_mask],np.full(len(left_mask),base))),mix_color(p0,p2,.24),baseline_alpha,1)
         if len(right_mask)>1: line(np.column_stack((xx[right_mask],np.full(len(right_mask),base))),mix_color(p1,p2,.24),baseline_alpha,1)
-        for segment_index,seg in enumerate(np.array_split(np.arange(count),4)):
-            if segment_index and len(seg): seg=np.r_[seg[0]-1,seg]
-            if len(seg)<2: continue
-            segment_energy=float(np.mean(energy[seg]))
-            color=reactive_color(int(seg[len(seg)//2]),segment_energy,1.0)
-            line(np.column_stack((xx[seg],upper[seg])),color,.70+.24*segment_energy,2)
 
-        # Layer B: sparse upward-only pillars.  A quiet field exposes roughly one
-        # column in three; energy adds a restrained second rhythm, never a wall.
+        # Layer B: premium dot hierarchy.  Full-height filled columns are avoided;
+        # primary heroes get three interior lights, secondary peaks two, and the
+        # supporting rhythm only one or two atmospheric hints.
         local_peak=(energy>=np.roll(energy,1))&(energy>=np.roll(energy,-1))
         peak_ids=np.flatnonzero(local_peak&(energy>.30))
-        hero_ids=set(peak_ids[np.argsort(energy[peak_ids])[-min(4,len(peak_ids)):]].tolist()) if len(peak_ids) else set()
+        ranked=peak_ids[np.argsort(energy[peak_ids])] if len(peak_ids) else np.asarray([],dtype=int)
+        primary_ids=set(ranked[-min(2,len(ranked)):].tolist())
+        secondary_pool=ranked[:-min(2,len(ranked))] if len(ranked) else ranked
+        secondary_ids=set(secondary_pool[-min(2,len(secondary_pool)):].tolist())
+        hero_ids=primary_ids|secondary_ids
         identity_offset={"HIS":0,"DUAL":1,"HER":2}.get(personality,0)
         for i,(x,v,height) in enumerate(zip(xx,energy,heights)):
             base_color=quantized_color(mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v))
-            if i%4==identity_offset%4: dot(x,base,radius*.48,base_color,.38)
-            selected=(i%3==identity_offset) or (v>.38 and i%2==identity_offset%2) or (v>.64 and (local_peak[i] or local_peak[(i-1)%count] or local_peak[(i+1)%count]))
+            if i%6==identity_offset%6: dot(x,base,radius*.42,base_color,.28)
+            selected=(i%4==identity_offset%4) or (v>.46 and local_peak[i]) or (v>.68 and (i-1 in primary_ids or i+1 in primary_ids))
             if not selected: continue
-            steps=min(limit,max(2,int(np.ceil(2+v*(limit-2)))))
-            for j in range(1,steps+1):
-                frac=j/steps
+            if i in primary_ids:
+                fractions=(.30,.55,.78)[:max(1,min(3,limit-1))]
+            elif i in secondary_ids:
+                fractions=(.46,.75)[:max(1,min(2,limit-1))]
+            else:
+                fractions=(.58,) if v<.58 else (.42,.73)
+            for frac in fractions:
                 y=base-height*frac
                 color=reactive_color(i,float(v),frac)
-                rr=radius*(.56+.20*frac+.30*v)
-                alpha=.52+.28*frac+.16*v
+                rr=radius*(.48+.18*frac+.18*v)
+                alpha=.40+.24*frac+.12*v
                 dot(x,y,rr,color,alpha)
-            hero=i in hero_ids
-            peak_radius=radius*((.72+.30*v) if not hero else (1.02+.56*v+.16*onset))
-            dot(x,upper[i],peak_radius,reactive_color(i,float(v),1.0),(.76+.12*v) if not hero else (.94+.04*v))
+            primary=i in primary_ids; secondary=i in secondary_ids
+            peak_radius=radius*((.66+.22*v) if not secondary and not primary else ((.88+.34*v) if secondary else (1.18+.58*v+.18*onset)))
+            peak_color=p3 if primary else reactive_color(i,float(v),1.0)
+            peak_alpha=(.68+.10*v) if not secondary and not primary else (.86 if secondary else .98)
+            dot(x,upper[i],peak_radius,peak_color,peak_alpha)
 
         # Layer C: onset peaks leap above the envelope, still never below the floor.
-        if hero_ids and onset>.22:
-            order=sorted(hero_ids,key=lambda index:energy[index])
+        if primary_ids and onset>.22:
+            order=sorted(primary_ids,key=lambda index:energy[index])
             spark=float(np.clip(onset*onset_gain,0,1))
             for i in order:
                 lift=available*(.025+.095*spark)*(.55+.45*energy[i])

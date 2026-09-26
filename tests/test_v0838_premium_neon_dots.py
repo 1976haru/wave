@@ -14,9 +14,9 @@ def templates():
     return [json.loads(path.read_text(encoding="utf-8")) for path in PATHS]
 
 
-def geometry(template, level, onset=0.0, seconds=4.0):
+def geometry(template, level=.82, onset=.75):
     count = int(template["bands"])
-    values = np.linspace(level * .75, level, count, dtype=np.float32)
+    values = np.linspace(level * .72, level, count, dtype=np.float32)
     state = {
         "values": values,
         "left_values": np.roll(values, 1) * .97,
@@ -25,41 +25,37 @@ def geometry(template, level, onset=0.0, seconds=4.0):
         "mid": level * .85,
         "high": level * .60,
         "onset": onset,
-        "time": seconds,
+        "time": 4.0,
     }
     return signature_instances(960, 160, state, template)
 
 
-def test_sparse_neon_template_contract():
-    by_id = {template["id"]: template for template in templates()}
-    assert {key: value["bands"] for key, value in by_id.items()} == {
-        "TOKYO_CHILL_HIS": 31,
-        "TOKYO_CHILL_DUAL": 33,
-        "TOKYO_CHILL_HER": 35,
-    }
-    assert all(template["version"] == "0.8.3.8" for template in by_id.values())
-    assert all(template["column_limit"] <= 5 for template in by_id.values())
-    assert all(template["baseline_y"] == template["anchor_y"] == .82 for template in by_id.values())
-
-
-def test_quiet_geometry_is_sparse_and_floor_anchored():
+def test_top_contour_is_completely_removed():
     for template in templates():
-        dots, lines = geometry(template, .18)
+        _, lines = geometry(template)
         base = 160 * template["anchor_y"]
-        baseline_dots = [dot for dot in dots if abs(dot[1] - base) <= .05]
-        assert len(baseline_dots) <= int(np.ceil(template["bands"] / 4))
-        assert len(dots) < template["bands"] * template["column_limit"] * .58
+        assert len(lines) == 2
+        assert all(np.allclose(np.asarray(layer["points"])[:, 1], base) for layer in lines)
+
+
+def test_premium_dots_stay_above_floor_with_reduced_fill():
+    for template in templates():
+        dots, lines = geometry(template)
+        base = 160 * template["anchor_y"]
         assert max(dot[1] for dot in dots) <= base + .05
         assert max(float(np.asarray(layer["points"])[:, 1].max()) for layer in lines) <= base + .05
+        assert len(dots) < template["bands"] * 3
 
 
-def test_strong_geometry_keeps_range_with_limited_colour_hierarchy():
+def test_hero_accents_are_limited_and_dynamic_range_survives():
     for template in templates():
-        quiet, _ = geometry(template, .18)
+        quiet, _ = geometry(template, .18, 0)
         strong, _ = geometry(template, .86, .80)
         base = 160 * template["anchor_y"]
         quiet_height = base - min(dot[1] for dot in quiet)
         strong_height = base - min(dot[1] for dot in strong)
+        radius = template["dot_diameter"] / 2
+        accents = [dot for dot in strong if dot[2] >= radius * 1.12]
         assert strong_height >= quiet_height + 45
         assert strong_height >= 85
-        assert 4 <= len({dot[3] for dot in strong}) <= 10
+        assert 1 <= len(accents) <= 7

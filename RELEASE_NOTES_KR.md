@@ -1,4 +1,12 @@
-# Music Wave Studio v0.8.3.7 Beta
+# Music Wave Studio v0.8.3.8 Beta
+
+## Premium Neon Dots
+
+- 그래프처럼 보이던 top contour를 완전히 제거했습니다.
+- strongest hero peak와 neon accent dot 중심으로 시각 계층을 재구성했습니다.
+- pillar 내부 fill density와 baseline 강조를 더 낮췄습니다.
+- floor-anchor 및 upward-only 구조는 그대로 유지합니다.
+- 실제 Tokyo Chill 배경 composition review를 다시 생성합니다.
 
 ## Sparse Neon Signature
 
