@@ -16,9 +16,23 @@ sys.path.insert(0, str(ROOT))
 
 from audio.analyzer import AnalysisSettings, analyze_file
 from core.ffmpeg import resolve_ffmpeg
-from tools.visualizer_prototypes.soft_round_led_engine import dot_geometry, load_profiles, render_frame, robust_normalize
+from tools.visualizer_prototypes.soft_round_led_engine import dot_geometry, render_frame, robust_normalize
 
 OUTPUT = ROOT / "validation_results/multi_channel_visualizer_bakeoff"
+LEGACY_PROFILE_DIR = ROOT / "research/visualizer_candidates/visualizer_profiles"
+
+
+def load_profiles() -> list[dict]:
+    """Load the earlier channel bake-off profiles; not used by universal core."""
+    base = json.loads((LEGACY_PROFILE_DIR / "base_soft_round_led.json").read_text(encoding="utf-8"))
+    profiles = []
+    for filename in ("tokyo_chill.json", "senior_oldpop.json", "chanson_paris.json"):
+        channel = json.loads((LEGACY_PROFILE_DIR / filename).read_text(encoding="utf-8"))
+        for key, overrides in channel["variants"].items():
+            profiles.append({**base, **overrides, "key": key, "channel": channel["channel"],
+                "style_name": channel["style_name"], "audio": channel["audio"], "background": channel["background"],
+                "background_treatment": channel["background_treatment"], "placement": channel["placement"]})
+    return profiles
 
 
 def font(size: int, bold=False):

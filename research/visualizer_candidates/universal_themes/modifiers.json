@@ -1,0 +1,17 @@
+{
+  "intensity": {
+    "CALM": {"amplitude_multiplier": 0.75, "attack_multiplier": 0.78, "release_offset": 0.045},
+    "STANDARD": {"amplitude_multiplier": 1.0, "attack_multiplier": 1.0, "release_offset": 0.0},
+    "DYNAMIC": {"amplitude_multiplier": 1.2, "attack_multiplier": 1.22, "release_offset": -0.04}
+  },
+  "width": {
+    "COMPACT": {"active_width": 335},
+    "STANDARD": {"active_width": 380},
+    "WIDE": {"active_width": 440}
+  },
+  "position": {
+    "LEFT": {"margin": 70},
+    "CENTER": {"margin": 0},
+    "RIGHT": {"margin": 70}
+  }
+}

@@ -2,7 +2,8 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.visualizer_prototypes.soft_round_led_engine import load_profiles, render_frame
+from tools.visualizer_prototypes.multi_channel_bakeoff import load_profiles
+from tools.visualizer_prototypes.soft_round_led_engine import render_frame
 
 
 ROOT = Path(__file__).resolve().parents[1]

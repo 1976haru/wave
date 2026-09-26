@@ -9,21 +9,77 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILE_DIR = ROOT / "research/visualizer_candidates/visualizer_profiles"
+UNIVERSAL_THEME_DIR = ROOT / "research/visualizer_candidates/universal_themes"
 
 
-def load_profiles() -> list[dict]:
-    base = json.loads((PROFILE_DIR / "base_soft_round_led.json").read_text(encoding="utf-8"))
-    profiles = []
-    for filename in ("tokyo_chill.json", "senior_oldpop.json", "chanson_paris.json"):
-        channel = json.loads((PROFILE_DIR / filename).read_text(encoding="utf-8"))
-        for key, overrides in channel["variants"].items():
-            profile = {**base, **overrides, "key": key, "channel": channel["channel"],
-                       "style_name": channel["style_name"], "audio": channel["audio"],
-                       "background": channel["background"], "background_treatment": channel["background_treatment"],
-                       "placement": channel["placement"]}
-            profiles.append(profile)
-    return profiles
+def load_universal_themes(directory: Path = UNIVERSAL_THEME_DIR) -> dict[str, dict]:
+    """Auto-discover generic themes; no channel or theme name lives in renderer code."""
+    base = json.loads((directory / "base_soft_round_led.json").read_text(encoding="utf-8"))
+    themes = {}
+    for path in sorted(directory.glob("theme_*.json")):
+        if path.name == "theme_order.json":
+            continue
+        theme = json.loads(path.read_text(encoding="utf-8"))
+        themes[theme["id"].upper()] = {**base, **theme, "source_file": str(path)}
+    order_path = directory / "theme_order.json"
+    preferred = json.loads(order_path.read_text(encoding="utf-8"))["order"] if order_path.exists() else []
+    rank = {theme_id: index for index, theme_id in enumerate(preferred)}
+    return dict(sorted(themes.items(), key=lambda item: (rank.get(item[0], len(rank)), item[0])))
+
+
+def load_modifiers(directory: Path = UNIVERSAL_THEME_DIR) -> dict:
+    return json.loads((directory / "modifiers.json").read_text(encoding="utf-8"))
+
+
+def auto_adapt(spectrum: np.ndarray, background_brightness: float) -> dict:
+    data = np.asarray(spectrum, np.float32)
+    frame_energy = np.mean(data, axis=1)
+    average = float(np.mean(frame_energy)); crest = float(np.percentile(frame_energy, 95) / max(1e-5, average))
+    bands = np.mean(data, axis=0); thirds = np.array_split(bands, 3)
+    bass, mid, high = (float(np.mean(part)) for part in thirds)
+    gain = 1.12 if average < .16 else (.90 if average > .38 else 1.0)
+    if crest > 3.0: gain *= .94
+    opacity = 1.07 if background_brightness > .62 else (.96 if background_brightness < .28 else 1.0)
+    brightness = 1.08 if background_brightness > .62 else 1.0
+    glow = .90 if background_brightness > .62 else (1.14 if background_brightness < .28 else 1.0)
+    return {"average_audio_energy": average, "crest_factor": crest, "bass_balance": bass,
+            "mid_balance": mid, "high_balance": high, "background_brightness": background_brightness,
+            "amplitude_multiplier": gain, "opacity_multiplier": opacity,
+            "brightness_multiplier": brightness, "glow_multiplier": glow}
+
+
+def resolve_universal_profile(theme: dict, intensity: str = "STANDARD", width: str = "STANDARD",
+                              position: str = "LEFT", custom_colors: list[str] | None = None,
+                              adapt: dict | None = None, modifiers: dict | None = None) -> dict:
+    modifiers = modifiers or load_modifiers(); intensity = intensity.upper(); width = width.upper(); position = position.upper()
+    result = dict(theme); intensity_values = modifiers["intensity"][intensity]
+    result["amplitude_gain"] *= intensity_values["amplitude_multiplier"]
+    result["attack"] = float(np.clip(result["attack"] * intensity_values["attack_multiplier"], .05, .9))
+    result["release"] = float(np.clip(result["release"] + intensity_values["release_offset"], .55, .97))
+    result["active_width"] = modifiers["width"][width]["active_width"]
+    margin = float(modifiers["position"][position]["margin"])
+    if position == "LEFT": result["x_position"] = margin
+    elif position == "CENTER": result["x_position"] = (960 - result["active_width"]) / 2
+    else: result["x_position"] = 960 - result["active_width"] - margin
+    if custom_colors:
+        result["gradient_stops"] = [[index / max(1, len(custom_colors)-1), color] for index, color in enumerate(custom_colors)]
+        result["color_mode"] = "CUSTOM"
+    else:
+        result["color_mode"] = "THEME"
+    if adapt:
+        result["amplitude_gain"] *= adapt["amplitude_multiplier"]
+        result["overall_opacity"] *= adapt["opacity_multiplier"]
+        result["brightness_compensation"] *= adapt["brightness_multiplier"]
+        result["inner_glow_alpha"] *= adapt["glow_multiplier"]
+        result["outer_glow_alpha"] *= adapt["glow_multiplier"]
+    # Translate the public universal schema once at the engine boundary.
+    result.update(floor_y=result["y_position"], inner_glow=result["inner_glow_alpha"],
+                  outer_glow=result["outer_glow_alpha"], inner_glow_scale=result["glow_radius"][0],
+                  outer_glow_scale=result["glow_radius"][1], frequency_min=result["min_frequency"],
+                  frequency_max=result["max_frequency"], opacity=result["overall_opacity"],
+                  brightness=result["brightness_compensation"], smoothing=result["temporal_smoothing"],
+                  min_dot_count=result["amplitude_floor"], max_dot_count=result["amplitude_ceiling"])
+    return result
 
 
 def hex_bgr(value: str) -> tuple[int, int, int]:
