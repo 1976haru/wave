@@ -93,8 +93,10 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         xx=center-width*.5+positions*width
         local=np.abs(xx-center)/(width*.5); band_position=np.clip(local*(len(values)-1),0,len(values)-1)
         source=np.interp(band_position,np.arange(len(values)),values)
-        left_source=np.interp(band_position,np.arange(len(left_raw)),left_raw)
-        right_source=np.interp(band_position,np.arange(len(right_raw)),right_raw)
+        left_full=np.resize(state.get("left_values",values),len(values))
+        right_full=np.resize(state.get("right_values",values),len(values))
+        left_source=np.interp(band_position,np.arange(len(left_full)),left_full)
+        right_source=np.interp(band_position,np.arange(len(right_full)),right_full)
         stereo=np.where(xx<center,.87*source+.13*np.roll(left_source,1),(.85*source+.15*np.roll(right_source,-2))*.97)
         centre_mix=np.exp(-((xx-center)/(width*.17))**2)
         stereo=np.clip(stereo*(.96+.07*np.sin(np.arange(count)*1.37))+.055*centre_mix,0,1)
@@ -146,7 +148,8 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         left_mask=np.flatnonzero(xx<=center); right_mask=np.flatnonzero(xx>=center)
         if len(left_mask)>1: line(np.column_stack((xx[left_mask],np.full(len(left_mask),base))),mix_color(p0,p2,.24),baseline_alpha,1)
         if len(right_mask)>1: line(np.column_stack((xx[right_mask],np.full(len(right_mask),base))),mix_color(p1,p2,.24),baseline_alpha,1)
-        for seg in np.array_split(np.arange(count),4):
+        for segment_index,seg in enumerate(np.array_split(np.arange(count),4)):
+            if segment_index and len(seg): seg=np.r_[seg[0]-1,seg]
             if len(seg)<2: continue
             segment_energy=float(np.mean(energy[seg]))
             color=reactive_color(int(seg[len(seg)//2]),segment_energy,1.0)
