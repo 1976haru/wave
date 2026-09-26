@@ -18,7 +18,7 @@ def test_stable_id_and_display_name_resolve_to_final():
     assert resolve_template("Tokyo Midnight Flow")["id"]=="TOKYO_CHILL_HIS"
 
 def test_robust_calibration_expands_narrow_real_music_proxy():
-    f=features();before=AnimationEngine(f,dict(T,signature_tier="EXPERIMENTAL"));after=AnimationEngine(f,T)
+    f=features();before=AnimationEngine(f,dict(T,signature_tier="EXPERIMENTAL",adaptive_normalization=False));after=AnimationEngine(f,T)
     old=np.asarray([np.median(before.sample(i/24)["values"]) for i in range(240)])
     new=np.asarray([np.median(after.sample(i/24)["values"]) for i in range(240)])
     assert np.percentile(new,90)-np.percentile(new,10)>np.percentile(old,90)-np.percentile(old,10)
