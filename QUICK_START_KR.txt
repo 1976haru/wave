@@ -1,6 +1,6 @@
 Music Wave Studio 빠른 시작
 
-1. MusicWaveStudio_v0.8.3.4.exe 실행
+1. MusicWaveStudio_v0.8.3.6.exe 실행
 2. 음원 폴더 선택
 3. Tokyo Twin Flow / Tokyo Midnight Flow / Tokyo Pearl Flow 중 선택
 4. 미리보기 확인
