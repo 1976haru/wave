@@ -84,16 +84,13 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
     if variant=="tokyo_chill_signature":
-        # One continuous, deliberately non-uniform stereo field shared by all
-        # personalities.  The centre is never empty; personality changes the
-        # layer balance rather than replacing the brand silhouette.
+        # v0.8.3.6 FLOOR-ANCHORED signature:
+        # the lower edge is visually fixed while all musical energy grows upward.
+        # Height and colour both react to the same energy/onset signal.
         personality=str(t.get("personality","DUAL")).upper(); count=max(43,int(t.get("bands",52)))
         rhythm=np.resize(np.asarray([.82,.88,1.34,.86,1.08,.91,1.22],np.float32),count-1)
         positions=np.r_[0,np.cumsum(rhythm)]; positions/=positions[-1]
         xx=center-width*.5+positions*width
-        # Each stereo half receives the complete spectrum. This avoids the
-        # accidental "bass on the left, treble on the right" imbalance while
-        # delayed inputs and small gain differences keep it from being a copy.
         local=np.abs(xx-center)/(width*.5); band_position=np.clip(local*(len(values)-1),0,len(values)-1)
         source=np.interp(band_position,np.arange(len(values)),values)
         left_source=np.interp(band_position,np.arange(len(left_raw)),left_raw)
@@ -101,41 +98,96 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         stereo=np.where(xx<center,.87*source+.13*np.roll(left_source,1),(.85*source+.15*np.roll(right_source,-2))*.97)
         centre_mix=np.exp(-((xx-center)/(width*.17))**2)
         stereo=np.clip(stereo*(.96+.07*np.sin(np.arange(count)*1.37))+.055*centre_mix,0,1)
-        phase=np.linspace(-np.pi,np.pi,count); breathe=np.sin(phase*1.18+tm*.25)
-        if personality=="HIS":
-            scale=h*.325*amp_gain; curve=.15+.85*stereo; upper=base-scale*curve*(.58+.24*(np.arange(count)%7==0)); lower=base+scale*np.roll(curve,2)*(.40+.10*(np.arange(count)%5==0)); main_alpha=.88; fill_alpha=.075
-        elif personality=="HER":
-            scale=h*.285*amp_gain; curve=.16+.84*np.convolve(np.pad(stereo,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid"); upper=base-scale*curve+breathe*h*.018; lower=base+scale*np.roll(curve,2)*.78-breathe*h*.014; main_alpha=.92; fill_alpha=.115
+
+        # Fixed floor.  Unlike v0.8.3.5 there is no mirrored lower waveform.
+        anchor=np.clip(float(t.get("anchor_y",t.get("baseline_y",.82))),.62,.92)
+        base=h*anchor
+        top_margin=h*np.clip(float(t.get("top_margin",.07)),.02,.28)
+        available=max(h*.18,base-top_margin)
+        visual_floor=np.clip(float(t.get("visual_floor",.10)),0,.35)
+        response_power=np.clip(float(t.get("vertical_response_power",.70)),.35,1.40)
+        energy=np.power(np.clip((stereo-visual_floor)/max(1e-4,1.0-visual_floor),0,1),response_power)
+        phase=np.linspace(-np.pi,np.pi,count)
+        if personality=="HER":
+            energy=np.convolve(np.pad(energy,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid")
+            structure=.97+.04*np.sin(np.arange(count)*1.03)
+            personality_gain=.96; minimum=.065
+        elif personality=="HIS":
+            structure=.93+.09*np.sin(np.arange(count)*1.37)+.05*(np.arange(count)%7==0)
+            personality_gain=1.08; minimum=.075
         else:
-            scale=h*.305*amp_gain; pull=.94+.08*np.sin(phase+tm*.38); curve=.16+.84*stereo; upper=base-scale*curve*pull+breathe*h*.010; lower=base+scale*np.roll(curve,1)*(.78+.08*np.cos(phase-tm*.31)); main_alpha=.94; fill_alpha=.10
-        # Layer A: connected upper/lower body with slow colour drift.
-        lower_gain=float(t.get("lower_response_gain",1.0)); lower=base+(lower-base)*lower_gain
-        line(np.column_stack((xx,upper)),flow_color(.02),main_alpha,2,{"other":np.column_stack((xx,lower)),"color":flow_color(.38),"alpha":fill_alpha*secondary_gain})
-        lower_alpha=float(t.get("lower_ribbon_alpha",.68 if personality!="HIS" else .76))
-        line(np.column_stack((xx,lower)),flow_color(.62),lower_alpha,2 if personality=="HER" else 1)
-        bridge=base+breathe*h*.009*(.45+.55*centre_mix)
-        bridge_gain=float(t.get("center_bridge_gain",1.0));line(np.column_stack((xx,bridge)),flow_color(.31),(.30+.20*onset*onset_gain)*bridge_gain,1)
-        # Layer B: selective low-mid pillars; dense/sparse rhythm is fixed, not random.
-        for i,(x,v) in enumerate(zip(xx,stereo)):
-            selected=(i%4 in (0,1) and i%7!=3) or v>.72
+            structure=.95+.065*np.sin(np.arange(count)*1.21)+.035*np.cos(phase*1.7)
+            personality_gain=1.0; minimum=.070
+        drive=np.clip(.66+.26*float(state.get("bass",.5))+.22*float(state.get("mid",.5))+.34*onset*onset_gain,.65,1.35)
+        height_ratio=np.clip(minimum+(1-minimum)*energy*drive*personality_gain*structure,minimum,.98)
+        heights=available*height_ratio
+        upper=np.maximum(top_margin,base-heights)
+
+        # Smooth energy-driven palette.  The floor keeps its identity colour;
+        # higher/stronger peaks travel through the palette and approach highlight.
+        smooth_palette=[np.asarray(c,np.float32) for c in flow_palette]
+        def mix_color(a,b,mix):
+            m=float(np.clip(mix,0,1)); return tuple(map(int,np.clip(np.asarray(a,np.float32)*(1-m)+np.asarray(b,np.float32)*m,0,255)))
+        def moving_color(position,offset=0):
+            ph=((position+tm/flow_period+offset)%1.0)*len(smooth_palette);ii=int(ph)%len(smooth_palette);ff=ph-ii
+            return mix_color(smooth_palette[ii],smooth_palette[(ii+1)%len(smooth_palette)],ff)
+        def identity_color(i):
+            if personality=="DUAL": return p0 if xx[i] < center else p1
+            if personality=="HIS": return p0 if xx[i] < center else p1
+            return p0 if xx[i] < center else p2
+        def reactive_color(i,v,vertical=1.0):
+            position=i/max(1,count-1)
+            moving=moving_color(position*.72+v*.18+onset*.08,vertical*.045)
+            first=mix_color(identity_color(i),moving,.26+.46*v+.16*vertical)
+            return mix_color(first,p3,np.clip((v-.55)*.55+onset*.25+vertical*.08,0,.42))
+
+        # Layer A: fixed baseline and moving TOP envelope only.
+        baseline_alpha=float(t.get("baseline_alpha",.48))
+        left_mask=np.flatnonzero(xx<=center); right_mask=np.flatnonzero(xx>=center)
+        if len(left_mask)>1: line(np.column_stack((xx[left_mask],np.full(len(left_mask),base))),mix_color(p0,p2,.24),baseline_alpha,1)
+        if len(right_mask)>1: line(np.column_stack((xx[right_mask],np.full(len(right_mask),base))),mix_color(p1,p2,.24),baseline_alpha,1)
+        for seg in np.array_split(np.arange(count),4):
+            if len(seg)<2: continue
+            segment_energy=float(np.mean(energy[seg]))
+            color=reactive_color(int(seg[len(seg)//2]),segment_energy,1.0)
+            line(np.column_stack((xx[seg],upper[seg])),color,.70+.24*segment_energy,2)
+
+        # Layer B: upward-only dotted pillars.  Every column starts at the same floor.
+        # Dot spacing is distributed over the full height so tall peaks really reach the top.
+        for i,(x,v,height) in enumerate(zip(xx,energy,heights)):
+            base_color=mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v)
+            dot(x,base,radius*.58,base_color,.48)
+            selected=(i%2==0) or v>.24 or (personality=="HIS" and i%3==0)
             if not selected: continue
-            emphasis=1.0+(personality=="HIS")*.22+(personality=="DUAL")*.06
-            height=scale*(.15+.52*v)*emphasis*(1.14 if i%9==0 else .72)
-            top=base-height; bottom=base+height*(.55 if personality!="HER" else .68)
-            color=p3 if v>.78 and i%9==0 else flow_color(i/max(1,count-1)*.84)
-            rr=radius*(1.18 if v>.68 else .82)
-            dot(x,top,rr,color,.94);dot(x,bottom,rr*.82,color,.70)
-            steps=min(limit,max(1,int(height/(radius*2+gap))))
-            for j in range(1,steps,2):
-                dot(x,base-j*(radius*2+gap),radius*.68,color,.70);dot(x,base+j*(radius*2+gap)*.62,radius*.58,color,.48)
-        # Layer C: sparse high shimmer and a short onset travel through centre.
-        shimmer=np.abs(stereo-np.roll(stereo,2)); peak_ids=np.flatnonzero((shimmer>.075)&(np.arange(count)%3==0))[:10]
-        for i in peak_ids:dot(xx[i],upper[i]-(3+5*shimmer[i]),radius*(.58+.48*stereo[i]),flow_color(i/count+.13),.62)
-        pulse=np.clip(onset*onset_gain-.16,0,1)
+            steps=min(limit,max(2,int(np.ceil(2+v*(limit-2)))))
+            for j in range(1,steps+1):
+                frac=j/steps
+                y=base-height*frac
+                color=reactive_color(i,float(v),frac)
+                rr=radius*(.56+.20*frac+.30*v)
+                alpha=.52+.28*frac+.16*v
+                dot(x,y,rr,color,alpha)
+            peak_radius=radius*(.84+.48*v+.18*onset)
+            dot(x,upper[i],peak_radius,reactive_color(i,float(v),1.0),.92+.06*v)
+
+        # Layer C: onset peaks leap above the envelope, still never below the floor.
+        local_peak=(energy>=np.roll(energy,1))&(energy>=np.roll(energy,-1))
+        peak_ids=np.flatnonzero(local_peak&(energy>.30))
+        if len(peak_ids):
+            order=peak_ids[np.argsort(energy[peak_ids])[-min(8,len(peak_ids)):]]
+            spark=float(np.clip(onset*onset_gain,0,1))
+            for i in order:
+                lift=available*(.025+.095*spark)*(.55+.45*energy[i])
+                y=max(top_margin,upper[i]-lift)
+                dot(xx[i],y,radius*(.58+.58*energy[i]+.30*spark),reactive_color(int(i),float(energy[i]),1.12),.58+.38*spark)
+        pulse=np.clip(onset*onset_gain-.10,0,1)
         if pulse>0:
-            direction=-1 if int(tm*3)%2 else 1
             for k in range(-3,4):
-                travel=k+direction*pulse*1.4; dot(center+travel*radius*3.4,base+np.sin(k*.72+tm)*h*.009,radius*(.72+.38*pulse-abs(k)*.035),flow_color(.43+k*.025),.38+.45*pulse)
+                spread=abs(k)/3
+                rise=available*(.08+.28*pulse)*(1-.38*spread)
+                x=center+k*radius*3.2
+                y=base-rise
+                dot(x,y,radius*(.62+.42*pulse-.045*abs(k)),moving_color(.48+k*.025,.08+pulse*.04),.34+.48*pulse)
     elif variant=="twin_bloom_v2":
         gap_ratio=max(.055,.115-onset*onset_gain*.035);xl=np.linspace(center-width*.47,center-width*gap_ratio,half_count);xright=2*center-xl[::-1]
         env=np.sin(np.linspace(.08,np.pi-.08,half_count))**.72;left_body=np.clip((.20+.80*left)*env,0,1);right_body=np.clip((.20+.80*right)*env[::-1],0,1);scale=h*.285*amp_gain
