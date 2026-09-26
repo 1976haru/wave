@@ -1,0 +1,13 @@
+{
+  "channel": "Japanese Chanson",
+  "style_name": "PARIS VELVET DOTS",
+  "audio": "sample_assets/sample_music_set/03_sample.wav",
+  "background": "sample_assets/background/v0833_cafe_window_fixture.png",
+  "background_treatment": "paris_autumn",
+  "placement": {"x": 310, "y": 820, "opacity": 0.86},
+  "variants": {
+    "C1": {"name": "Paris Velvet", "bands": 26, "active_width": 365, "dot_diameter": 3.8, "horizontal_gap": 14.6, "vertical_gap": 6.1, "attack": 0.34, "release": 0.88, "smoothing": 2, "amplitude_gain": 0.90, "inner_glow": 0.20, "outer_glow": 0.05, "tail_threshold": 0.085, "gradient_stops": [[0.0, "#9F3557"], [0.42, "#D36B86"], [0.72, "#E2BE88"], [1.0, "#B59AC8"]]},
+    "C2": {"name": "Cafe Rose", "bands": 28, "active_width": 380, "dot_diameter": 3.7, "horizontal_gap": 14.1, "vertical_gap": 5.9, "attack": 0.37, "release": 0.86, "smoothing": 2, "amplitude_gain": 0.94, "inner_glow": 0.22, "outer_glow": 0.055, "tail_threshold": 0.08, "gradient_stops": [[0.0, "#9F3557"], [0.48, "#D36B86"], [0.8, "#B59AC8"], [1.0, "#F3E6D1"]]},
+    "C3": {"name": "French Night", "bands": 24, "active_width": 345, "dot_diameter": 3.6, "horizontal_gap": 15.0, "vertical_gap": 6.3, "attack": 0.40, "release": 0.85, "smoothing": 2, "amplitude_gain": 0.96, "inner_glow": 0.23, "outer_glow": 0.06, "tail_threshold": 0.095, "low_band_weight": 1.05, "high_band_weight": 0.62, "gradient_stops": [[0.0, "#9F3557"], [0.5, "#D36B86"], [0.76, "#B59AC8"], [1.0, "#E2BE88"]]}
+  }
+}

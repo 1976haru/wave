@@ -1,0 +1,13 @@
+{
+  "channel": "Senior Old Pop Lounge",
+  "style_name": "WARM PEARL DOTS",
+  "audio": "sample_assets/sample_music_set/02_sample.wav",
+  "background": "sample_assets/background/v0833_daytime_romantic_fixture.png",
+  "background_treatment": "warm_lounge",
+  "placement": {"x": 510, "y": 820, "opacity": 0.88},
+  "variants": {
+    "S1": {"name": "Warm Pearl", "bands": 24, "active_width": 370, "x_position": 64, "dot_diameter": 3.6, "horizontal_gap": 16.1, "vertical_gap": 6.5, "attack": 0.25, "release": 0.88, "smoothing": 3, "amplitude_gain": 0.78, "inner_glow": 0.15, "outer_glow": 0.035, "tail_threshold": 0.075, "high_band_weight": 0.55, "gradient_stops": [[0.0, "#FFF2D5"], [0.45, "#EAD6A5"], [0.78, "#D8B77B"], [1.0, "#D7A7A3"]]},
+    "S2": {"name": "Champagne Lounge", "bands": 22, "active_width": 398, "x_position": 62, "dot_diameter": 3.8, "horizontal_gap": 19.0, "vertical_gap": 6.8, "attack": 0.22, "release": 0.90, "smoothing": 3, "amplitude_gain": 0.72, "inner_glow": 0.13, "outer_glow": 0.025, "tail_threshold": 0.07, "low_band_weight": 0.92, "mid_band_weight": 1.05, "high_band_weight": 0.50, "gradient_stops": [[0.0, "#FFF2D5"], [0.5, "#EAD6A5"], [0.82, "#D8B77B"], [1.0, "#AFC4D2"]]},
+    "S3": {"name": "Memory Glow", "bands": 26, "active_width": 388, "x_position": 66, "dot_diameter": 3.5, "horizontal_gap": 15.5, "vertical_gap": 6.2, "attack": 0.28, "release": 0.87, "smoothing": 2, "amplitude_gain": 0.82, "inner_glow": 0.18, "outer_glow": 0.045, "tail_threshold": 0.085, "high_band_weight": 0.58, "gradient_stops": [[0.0, "#FFF2D5"], [0.45, "#EAD6A5"], [0.75, "#D7A7A3"], [1.0, "#AFC4D2"]]}
+  }
+}

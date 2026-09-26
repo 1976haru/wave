@@ -1,0 +1,13 @@
+{
+  "channel": "Tokyo Chill",
+  "style_name": "TOKYO NEON DOTS",
+  "audio": "validation_results/v0839_chill_girl_vibes/validation_fixture_30s.wav",
+  "background": "sample_assets/background/v0830_tokyo_night_fixture.png",
+  "background_treatment": "tokyo_original",
+  "placement": {"x": 230, "y": 825, "opacity": 0.82},
+  "variants": {
+    "T1": {"name": "Tokyo Reference", "bands": 28, "active_width": 338, "dot_diameter": 3.7, "horizontal_gap": 12.5, "vertical_gap": 5.8, "attack": 0.46, "release": 0.85, "smoothing": 1, "amplitude_gain": 1.0, "inner_glow": 0.22, "outer_glow": 0.055, "tail_threshold": 0.10},
+    "T2": {"name": "Tokyo Neon", "bands": 30, "active_width": 365, "dot_diameter": 3.9, "horizontal_gap": 12.6, "vertical_gap": 5.8, "attack": 0.50, "release": 0.84, "smoothing": 1, "amplitude_gain": 1.05, "inner_glow": 0.26, "outer_glow": 0.075, "tail_threshold": 0.09},
+    "T3": {"name": "Tokyo Club", "bands": 26, "active_width": 350, "dot_diameter": 3.6, "horizontal_gap": 14.0, "vertical_gap": 5.6, "attack": 0.64, "release": 0.82, "smoothing": 1, "amplitude_gain": 1.10, "inner_glow": 0.24, "outer_glow": 0.075, "tail_threshold": 0.11, "gradient_stops": [[0.0, "#FF3EB5"], [0.55, "#E44AFF"], [0.8, "#A658FF"], [1.0, "#55D8FF"]]}
+  }
+}
