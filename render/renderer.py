@@ -130,18 +130,30 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         smooth_palette=[np.asarray(c,np.float32) for c in flow_palette]
         def mix_color(a,b,mix):
             m=float(np.clip(mix,0,1)); return tuple(map(int,np.clip(np.asarray(a,np.float32)*(1-m)+np.asarray(b,np.float32)*m,0,255)))
+        # Keep colour motion visually rich but bounded to a small palette.
+        # This preserves fast CPU fallback rendering instead of creating
+        # hundreds of unique colour batches per frame.
+        palette_steps=[]
+        for palette_index,palette_color in enumerate(smooth_palette):
+            next_color=smooth_palette[(palette_index+1)%len(smooth_palette)]
+            palette_steps.append(tuple(map(int,palette_color)))
+            palette_steps.append(mix_color(palette_color,next_color,.5))
         def moving_color(position,offset=0):
-            ph=((position+tm/flow_period+offset)%1.0)*len(smooth_palette);ii=int(ph)%len(smooth_palette);ff=ph-ii
-            return mix_color(smooth_palette[ii],smooth_palette[(ii+1)%len(smooth_palette)],ff)
+            phase=((position+tm/flow_period+offset)%1.0)*len(palette_steps)
+            return palette_steps[int(phase)%len(palette_steps)]
         def identity_color(i):
             if personality=="DUAL": return p0 if xx[i] < center else p1
             if personality=="HIS": return p0 if xx[i] < center else p1
             return p0 if xx[i] < center else p2
         def reactive_color(i,v,vertical=1.0):
             position=i/max(1,count-1)
+            identity=identity_color(i)
             moving=moving_color(position*.72+v*.18+onset*.08,vertical*.045)
-            first=mix_color(identity_color(i),moving,.26+.46*v+.16*vertical)
-            return mix_color(first,p3,np.clip((v-.55)*.55+onset*.25+vertical*.08,0,.42))
+            signal=v+onset*.25
+            if vertical<.34 and signal<.62: return identity
+            if vertical<.72 and signal<.78: return mix_color(identity,moving,.5)
+            if vertical>.90 and (v>.58 or onset>.35): return mix_color(moving,p3,.35)
+            return moving
 
         # Layer A: fixed baseline and moving TOP envelope only.
         baseline_alpha=float(t.get("baseline_alpha",.48))
