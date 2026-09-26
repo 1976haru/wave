@@ -1,22 +1,32 @@
-# Music Wave Studio v0.8.3.4 Beta
+# Music Wave Studio v0.8.3.6 Beta
 
-GitHub Release 초안 정보:
+## 이번 업그레이드 핵심
 
-- Tag: `v0.8.3.4-beta`
-- Title: `Music Wave Studio v0.8.3.4 Beta`
-- Asset: `MusicWaveStudio_v0.8.3.4_BETA_WINDOWS.zip`
+- Tokyo Chill 시그니처 3종의 기준선을 화면 높이 약 82% 지점에 고정했습니다.
+- 파형이 기준선 아래로 내려가지 않고 음악 에너지에 따라 위쪽으로만 크게 상승합니다.
+- 잔잔한 구간과 강한 구간의 높이 차이를 확대해 장시간 플레이리스트에서도 움직임이 평평해 보이지 않도록 조정했습니다.
+- 색상 변화가 단순 시간 흐름뿐 아니라 파형 높이, 에너지, onset 강도에 함께 반응합니다.
+- 강한 피크에서는 상단 highlight/spark가 추가되어 비트의 순간 상승을 더 분명하게 표시합니다.
+- 남성/듀얼 시그니처는 DYNAMIC, 여성 시그니처는 DYNAMIC_SOFT로 성격을 분리했습니다.
+- 좌/우 지연 신호는 전체 주파수 범위를 유지하도록 보정했고 상단 envelope의 구간 연결도 이어지도록 수정했습니다.
 
-## 주요 기능
+## 회귀 방지
 
-- 15곡 폴더를 SET waveform 영상 1개로 출력
-- Tokyo Chill 최종 시그니처 3개: Tokyo Twin Flow, Tokyo Midnight Flow, Tokyo Pearl Flow
-- 960x160, 24fps, H.264 CRF18 compact output
+`tests/test_v0836_floor_anchor.py`에서 다음을 고정 검증합니다.
+
+- 하단 기준선 고정
+- 기준선 아래 geometry 생성 금지
+- 강한 음악에서 최소 45px 이상의 추가 상승폭
+- 강한 상태에서 총 상승 높이 85px 이상
+- 에너지와 시간에 따른 색상 변화
+- v0.8.3.6 floor-anchor 템플릿 파라미터
+
+## 기본 출력
+
+- 960x160
+- 24fps
+- H.264 / CRF18
+- 검정 배경
 - CapCut Screen 합성 workflow
-- 다중 SET queue, 진행률, resume 지원
-- Python 및 별도 FFmpeg 설치가 필요 없는 Windows 패키지
-
-## Beta 테스트
-
-`TEST_GUIDE_KR.md`의 순서에 따라 실행, SET 출력, CapCut Screen 합성 및 종료 상태를 확인한 뒤 `FEEDBACK_FORM_KR.txt`에 결과를 작성해 주세요.
 
 실제 GitHub Release publish는 사용자 승인 후 진행합니다.
