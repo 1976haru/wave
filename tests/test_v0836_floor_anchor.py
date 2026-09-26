@@ -68,7 +68,7 @@ def test_reactive_palette_stays_cpu_friendly():
         assert 4<=len(colors)<=32
 def test_final_templates_use_floor_anchor_parameters():
     for template in templates():
-        assert template["version"] in {"0.8.3.6","0.8.3.7","0.8.3.8"}
+        assert template["version"] in {"0.8.3.6","0.8.3.7","0.8.3.8","0.8.3.9"}
         assert .80<=float(template["anchor_y"])<=.84
         assert float(template["baseline_y"])==float(template["anchor_y"])
         assert template["adaptive_normalization"] is True

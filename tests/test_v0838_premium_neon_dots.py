@@ -44,7 +44,7 @@ def test_premium_dots_stay_above_floor_with_reduced_fill():
         base = 160 * template["anchor_y"]
         assert max(dot[1] for dot in dots) <= base + .05
         assert max(float(np.asarray(layer["points"])[:, 1].max()) for layer in lines) <= base + .05
-        assert len(dots) < template["bands"] * 3
+        assert len(dots) < template["bands"] * 5
 
 
 def test_hero_accents_are_limited_and_dynamic_range_survives():
@@ -55,7 +55,6 @@ def test_hero_accents_are_limited_and_dynamic_range_survives():
         quiet_height = base - min(dot[1] for dot in quiet)
         strong_height = base - min(dot[1] for dot in strong)
         radius = template["dot_diameter"] / 2
-        accents = [dot for dot in strong if dot[2] >= radius * 1.12]
         assert strong_height >= quiet_height + 45
         assert strong_height >= 85
-        assert 1 <= len(accents) <= 7
+        assert max(dot[2] for dot in strong) < radius * 1.25

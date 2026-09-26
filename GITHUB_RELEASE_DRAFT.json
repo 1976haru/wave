@@ -1,7 +1,7 @@
 {
-  "tag": "v0.8.3.8-beta",
-  "title": "Music Wave Studio v0.8.3.8 Beta",
-  "asset": "release/MusicWaveStudio_v0.8.3.8_WINDOWS.zip",
+  "tag": "v0.8.3.9-beta",
+  "title": "Music Wave Studio v0.8.3.9 Beta",
+  "asset": "release/MusicWaveStudio_v0.8.3.9_WINDOWS.zip",
   "notes": "RELEASE_NOTES_KR.md",
   "publish": false
 }

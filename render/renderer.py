@@ -84,7 +84,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
     if variant=="tokyo_chill_signature":
-        # v0.8.3.8 PREMIUM NEON DOTS signature:
+        # v0.8.3.9 CHILL GIRL VIBES signature:
         # the lower edge is visually fixed while all musical energy grows upward.
         # Height and colour both react to the same energy/onset signal.
         personality=str(t.get("personality","DUAL")).upper(); count=max(25,int(t.get("bands",35)))
@@ -109,6 +109,11 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         visual_floor=np.clip(float(t.get("visual_floor",.10)),0,.35)
         response_power=np.clip(float(t.get("vertical_response_power",.70)),.35,1.40)
         energy=np.power(np.clip((stereo-visual_floor)/max(1e-4,1.0-visual_floor),0,1),response_power)
+        # Turn narrow spectral spikes into connected, rounded lower-third mounds.
+        mound_kernel=np.asarray([.035,.075,.125,.17,.19,.17,.125,.075,.035],np.float32)
+        mound_kernel/=mound_kernel.sum()
+        energy=np.convolve(np.pad(energy,(4,4),mode="edge"),mound_kernel,mode="valid")
+        energy=np.convolve(np.pad(energy,(4,4),mode="edge"),mound_kernel,mode="valid")
         phase=np.linspace(-np.pi,np.pi,count)
         if personality=="HER":
             energy=np.convolve(np.pad(energy,(2,2),mode="edge"),[.08,.22,.40,.22,.08],mode="valid")
@@ -121,7 +126,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             structure=.95+.065*np.sin(np.arange(count)*1.21)+.035*np.cos(phase*1.7)
             personality_gain=1.0; minimum=.070
         drive=np.clip(.66+.26*float(state.get("bass",.5))+.22*float(state.get("mid",.5))+.34*onset*onset_gain,.65,1.35)
-        intensity_ceiling={"NORMAL":.82,"DYNAMIC_SOFT":.90,"DYNAMIC":.98}.get(intensity,.82)
+        intensity_ceiling={"NORMAL":.74,"DYNAMIC_SOFT":.82,"DYNAMIC":.88}.get(intensity,.74)
         height_ratio=np.clip(minimum+(1-minimum)*energy*drive*personality_gain*structure*amp_gain,minimum,intensity_ceiling)
         heights=available*height_ratio
         upper=np.maximum(top_margin,base-heights)
@@ -171,57 +176,42 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         if len(left_mask)>1: line(np.column_stack((xx[left_mask],np.full(len(left_mask),base))),mix_color(p0,p2,.24),baseline_alpha,1)
         if len(right_mask)>1: line(np.column_stack((xx[right_mask],np.full(len(right_mask),base))),mix_color(p1,p2,.24),baseline_alpha,1)
 
-        # Layer B: premium dot hierarchy.  Full-height filled columns are avoided;
-        # primary heroes get three interior lights, secondary peaks two, and the
-        # supporting rhythm only one or two atmospheric hints.
+        # Layer B: a wide dotted body rather than independent pillars.  Every band
+        # participates in the low decorative mass; staggered rows and tiny fixed
+        # offsets stop it reading as a rectangular equalizer grid.
         local_peak=(energy>=np.roll(energy,1))&(energy>=np.roll(energy,-1))
-        peak_ids=np.flatnonzero(local_peak&(energy>.30))
+        peak_ids=np.flatnonzero(local_peak&(energy>.24))
         ranked=peak_ids[np.argsort(energy[peak_ids])] if len(peak_ids) else np.asarray([],dtype=int)
-        primary_ids=set(ranked[-min(2,len(ranked)):].tolist())
-        secondary_pool=ranked[:-min(2,len(ranked))] if len(ranked) else ranked
-        secondary_ids=set(secondary_pool[-min(2,len(secondary_pool)):].tolist())
-        hero_ids=primary_ids|secondary_ids
-        identity_offset={"HIS":0,"DUAL":1,"HER":2}.get(personality,0)
+        mound_accents=set(ranked[-min(4,len(ranked)):].tolist())
         for i,(x,v,height) in enumerate(zip(xx,energy,heights)):
             base_color=quantized_color(mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v))
-            if i%6==identity_offset%6: dot(x,base,radius*.42,base_color,.28)
-            selected=(i%4==identity_offset%4) or (v>.46 and local_peak[i]) or (v>.68 and (i-1 in primary_ids or i+1 in primary_ids))
-            if not selected: continue
-            if i in primary_ids:
-                fractions=(.30,.55,.78)[:max(1,min(3,limit-1))]
-            elif i in secondary_ids:
-                fractions=(.46,.75)[:max(1,min(2,limit-1))]
-            else:
-                fractions=(.58,) if v<.58 else (.42,.73)
-            for frac in fractions:
+            if i%3==0: dot(x,base,radius*.40,base_color,.26)
+            rows=max(1,min(limit,1+int(np.floor(v*(limit-.35)))))
+            fractions=np.linspace(.20,.88,rows)
+            for row,frac in enumerate(fractions):
+                if rows>2 and row not in (0,rows-1) and (i+row)%2==0: continue
+                x_shift=radius*.34*np.sin(i*1.73+row*2.11)
                 y=base-height*frac
                 color=reactive_color(i,float(v),frac)
-                rr=radius*(.48+.18*frac+.18*v)
-                alpha=.40+.24*frac+.12*v
-                dot(x,y,rr,color,alpha)
-            primary=i in primary_ids; secondary=i in secondary_ids
-            peak_radius=radius*((.66+.22*v) if not secondary and not primary else ((.88+.34*v) if secondary else (1.18+.58*v+.18*onset)))
-            peak_color=p3 if primary else reactive_color(i,float(v),1.0)
-            peak_alpha=(.68+.10*v) if not secondary and not primary else (.86 if secondary else .98)
-            dot(x,upper[i],peak_radius,peak_color,peak_alpha)
+                rr=radius*(.62+.10*frac+.12*v)
+                alpha=.48+.20*frac+.10*v
+                dot(x+x_shift,y,rr,color,alpha)
+            # The mound crest is a same-family neon grain, never a white marker.
+            if i in mound_accents:
+                accent=moving_color(i/max(1,count-1)*.72+.08,.04)
+                dot(x,upper[i],radius*(.84+.22*v),accent,.82+.10*v)
 
-        # Layer C: onset peaks leap above the envelope, still never below the floor.
-        if primary_ids and onset>.22:
-            order=sorted(primary_ids,key=lambda index:energy[index])
-            spark=float(np.clip(onset*onset_gain,0,1))
-            for i in order:
-                lift=available*(.025+.095*spark)*(.55+.45*energy[i])
-                y=max(top_margin,upper[i]-lift)
-                dot(xx[i],y,radius*(.58+.58*energy[i]+.30*spark),p3,.58+.38*spark)
+        # Layer C: a short, broad onset breath around the centre.  It thickens the
+        # decorative body instead of creating isolated sparks above it.
         pulse=np.clip(onset*onset_gain-.10,0,1)
         if pulse>0:
-            for k in range(-1,2):
-                spread=abs(k)
-                rise=available*(.08+.28*pulse)*(1-.38*spread)
+            for k in range(-2,3):
+                spread=abs(k)/2
+                rise=available*(.055+.15*pulse)*(1-.30*spread)
                 x=center+k*radius*3.2
                 y=base-rise
-                accent=p3 if k==0 else moving_color(.48+k*.025,.08+pulse*.04)
-                dot(x,y,radius*(.62+.42*pulse-.045*abs(k)),accent,.34+.48*pulse)
+                accent=moving_color(.48+k*.025,.08+pulse*.04)
+                dot(x,y,radius*(.66+.24*pulse-.035*abs(k)),accent,.32+.36*pulse)
     elif variant=="twin_bloom_v2":
         gap_ratio=max(.055,.115-onset*onset_gain*.035);xl=np.linspace(center-width*.47,center-width*gap_ratio,half_count);xright=2*center-xl[::-1]
         env=np.sin(np.linspace(.08,np.pi-.08,half_count))**.72;left_body=np.clip((.20+.80*left)*env,0,1);right_body=np.clip((.20+.80*right)*env[::-1],0,1);scale=h*.285*amp_gain

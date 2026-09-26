@@ -33,12 +33,12 @@ def geometry(template, level, onset=0.0, seconds=4.0):
 def test_sparse_neon_template_contract():
     by_id = {template["id"]: template for template in templates()}
     assert {key: value["bands"] for key, value in by_id.items()} == {
-        "TOKYO_CHILL_HIS": 31,
-        "TOKYO_CHILL_DUAL": 33,
-        "TOKYO_CHILL_HER": 35,
+        "TOKYO_CHILL_HIS": 39,
+        "TOKYO_CHILL_DUAL": 41,
+        "TOKYO_CHILL_HER": 43,
     }
-    assert all(template["version"] == "0.8.3.8" for template in by_id.values())
-    assert all(template["column_limit"] <= 5 for template in by_id.values())
+    assert all(template["version"] == "0.8.3.9" for template in by_id.values())
+    assert all(template["column_limit"] <= 6 for template in by_id.values())
     assert all(template["baseline_y"] == template["anchor_y"] == .82 for template in by_id.values())
 
 
@@ -47,8 +47,8 @@ def test_quiet_geometry_is_sparse_and_floor_anchored():
         dots, lines = geometry(template, .18)
         base = 160 * template["anchor_y"]
         baseline_dots = [dot for dot in dots if abs(dot[1] - base) <= .05]
-        assert len(baseline_dots) <= int(np.ceil(template["bands"] / 4))
-        assert len(dots) < template["bands"] * template["column_limit"] * .58
+        assert len(baseline_dots) <= int(np.ceil(template["bands"] / 3))
+        assert len(dots) < template["bands"] * template["column_limit"] * .78
         assert max(dot[1] for dot in dots) <= base + .05
         assert max(float(np.asarray(layer["points"])[:, 1].max()) for layer in lines) <= base + .05
 

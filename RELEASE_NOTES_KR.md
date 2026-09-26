@@ -1,4 +1,12 @@
-# Music Wave Studio v0.8.3.8 Beta
+# Music Wave Studio v0.8.3.9 Beta
+
+## Chill Girl Vibes Lower-Third Dotted Wave
+
+- Premium Neon Dots 방향에서 감성적인 lower-third dotted wave로 전환했습니다.
+- 더 풍부하지만 부드러운 dotted body와 rounded mound/skyline 형태를 적용했습니다.
+- isolated hero pole과 harsh white marker를 제거했습니다.
+- top contour 없이 floor-anchor/upward-only 구조를 유지합니다.
+- 실제 Tokyo Chill 배경 composition review를 다시 생성합니다.
 
 ## Premium Neon Dots
 

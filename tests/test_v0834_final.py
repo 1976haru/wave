@@ -29,4 +29,4 @@ def test_final_geometry_has_center_continuity():
         dots,lines=signature_instances(960,160,state,t);assert len(lines)>=2 and len(dots)>12
         assert any(np.any((layer["points"][:,0]>450)&(layer["points"][:,0]<510)) for layer in lines)
 
-def test_version():assert get_version() in {"0.8.3.4","0.8.3.5","0.8.3.6","0.8.3.7","0.8.3.8"}
+def test_version():assert get_version() in {"0.8.3.4","0.8.3.5","0.8.3.6","0.8.3.7","0.8.3.8","0.8.3.9"}
