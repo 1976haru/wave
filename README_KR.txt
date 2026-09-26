@@ -1,6 +1,6 @@
 압축을 풀고 EXE를 실행하세요.
 
-Music Wave Studio v0.8.3.4 BETA
+Music Wave Studio v0.8.3.6 BETA
 
 1. 음원 15곡이 들어 있는 폴더를 선택합니다.
 2. 추천 시그니처 3개 중 하나를 선택합니다.
