@@ -11,7 +11,7 @@ def load():return [json.loads(p.read_text(encoding="utf-8")) for p in PATHS]
 def test_final_ids_and_defaults():
     items=load();assert len(items)==3
     assert {x["id"] for x in items}=={"TOKYO_CHILL_DUAL","TOKYO_CHILL_HIS","TOKYO_CHILL_HER"}
-    assert all(x["signature_tier"]=="FINAL" and x["intensity"]=="DYNAMIC_SOFT" for x in items)
+    assert all(x["signature_tier"]=="FINAL" for x in items)\n    assert {x["id"]:x["intensity"] for x in items}=={"TOKYO_CHILL_DUAL":"DYNAMIC","TOKYO_CHILL_HIS":"DYNAMIC","TOKYO_CHILL_HER":"DYNAMIC_SOFT"}
     assert all(x["canvas_profile"]=={"width":960,"height":160,"fps":24,"pixel_format":"yuv420p","codec":"H.264","crf":18,"background":"#000000"} for x in items)
 
 def test_final_polish_parameters():
@@ -28,4 +28,4 @@ def test_final_geometry_has_center_continuity():
         dots,lines=signature_instances(960,160,state,t);assert len(lines)>=3 and len(dots)>20
         assert any(np.any((layer["points"][:,0]>450)&(layer["points"][:,0]<510)) for layer in lines)
 
-def test_version():assert get_version() in {"0.8.3.4","0.8.3.5"}
+def test_version():assert get_version() in {"0.8.3.4","0.8.3.5","0.8.3.6"}
