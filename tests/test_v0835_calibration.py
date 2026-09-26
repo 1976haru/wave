@@ -22,7 +22,7 @@ def test_robust_calibration_expands_narrow_real_music_proxy():
     old=np.asarray([np.median(before.sample(i/24)["values"]) for i in range(240)])
     new=np.asarray([np.median(after.sample(i/24)["values"]) for i in range(240)])
     assert np.percentile(new,90)-np.percentile(new,10)>np.percentile(old,90)-np.percentile(old,10)
-    assert new.min()>=.12
+    assert new.min()>=float(T.get("signature_body_floor",.12))
 
 def test_absolute_time_is_separate_from_track_time():
     state=AnimationEngine(features(),T).sample(1.25,absolute_seconds=361.25)
