@@ -84,10 +84,10 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             dot(x,base+side*level*(2*radius+gap),radius,color,opacity*(.68+.32*(j+1)/rows))
     def line(points,color,alpha=.8,thickness=1,fill=None):lines.append({"points":np.asarray(points,np.float32),"color":color,"alpha":alpha,"thickness":thickness,"fill":fill})
     if variant=="tokyo_chill_signature":
-        # v0.8.3.6 FLOOR-ANCHORED signature:
+        # v0.8.3.7 SPARSE NEON signature:
         # the lower edge is visually fixed while all musical energy grows upward.
         # Height and colour both react to the same energy/onset signal.
-        personality=str(t.get("personality","DUAL")).upper(); count=max(43,int(t.get("bands",52)))
+        personality=str(t.get("personality","DUAL")).upper(); count=max(25,int(t.get("bands",35)))
         rhythm=np.resize(np.asarray([.82,.88,1.34,.86,1.08,.91,1.22],np.float32),count-1)
         positions=np.r_[0,np.cumsum(rhythm)]; positions/=positions[-1]
         xx=center-width*.5+positions*width
@@ -134,11 +134,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
         # Keep colour motion visually rich but bounded to a small palette.
         # This preserves fast CPU fallback rendering instead of creating
         # hundreds of unique colour batches per frame.
-        palette_steps=[]
-        for palette_index,palette_color in enumerate(smooth_palette):
-            next_color=smooth_palette[(palette_index+1)%len(smooth_palette)]
-            palette_steps.append(tuple(map(int,palette_color)))
-            palette_steps.append(mix_color(palette_color,next_color,.5))
+        palette_steps=[tuple(map(int,color)) for color in smooth_palette]
         render_palette=list(dict.fromkeys(palette_steps+[p0,p1,p2,p3]))
         render_palette_array=np.asarray(render_palette,np.float32)
         quantized_cache={color:color for color in render_palette}
@@ -162,6 +158,7 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             identity=identity_color(i)
             moving=moving_color(position*.72+v*.18+onset*.08,vertical*.045)
             signal=v+onset*.25
+            if v<.26 and onset<.18: return quantized_color(identity)
             if vertical<.34 and signal<.62: return quantized_color(identity)
             if vertical<.72 and signal<.78: return quantized_color(mix_color(identity,moving,.5))
             if vertical>.90 and (v>.58 or onset>.35): return quantized_color(mix_color(moving,p3,.35))
@@ -179,12 +176,16 @@ def _stereo_signature_geometry(w,h,state,t,palette):
             color=reactive_color(int(seg[len(seg)//2]),segment_energy,1.0)
             line(np.column_stack((xx[seg],upper[seg])),color,.70+.24*segment_energy,2)
 
-        # Layer B: upward-only dotted pillars.  Every column starts at the same floor.
-        # Dot spacing is distributed over the full height so tall peaks really reach the top.
+        # Layer B: sparse upward-only pillars.  A quiet field exposes roughly one
+        # column in three; energy adds a restrained second rhythm, never a wall.
+        local_peak=(energy>=np.roll(energy,1))&(energy>=np.roll(energy,-1))
+        peak_ids=np.flatnonzero(local_peak&(energy>.30))
+        hero_ids=set(peak_ids[np.argsort(energy[peak_ids])[-min(4,len(peak_ids)):]].tolist()) if len(peak_ids) else set()
+        identity_offset={"HIS":0,"DUAL":1,"HER":2}.get(personality,0)
         for i,(x,v,height) in enumerate(zip(xx,energy,heights)):
             base_color=quantized_color(mix_color(identity_color(i),moving_color(i/max(1,count-1)*.58),.18+.16*v))
-            dot(x,base,radius*.58,base_color,.48)
-            selected=(i%2==0) or v>.24 or (personality=="HIS" and i%3==0)
+            if i%4==identity_offset%4: dot(x,base,radius*.48,base_color,.38)
+            selected=(i%3==identity_offset) or (v>.38 and i%2==identity_offset%2) or (v>.64 and (local_peak[i] or local_peak[(i-1)%count] or local_peak[(i+1)%count]))
             if not selected: continue
             steps=min(limit,max(2,int(np.ceil(2+v*(limit-2)))))
             for j in range(1,steps+1):
@@ -194,27 +195,27 @@ def _stereo_signature_geometry(w,h,state,t,palette):
                 rr=radius*(.56+.20*frac+.30*v)
                 alpha=.52+.28*frac+.16*v
                 dot(x,y,rr,color,alpha)
-            peak_radius=radius*(.84+.48*v+.18*onset)
-            dot(x,upper[i],peak_radius,reactive_color(i,float(v),1.0),.92+.06*v)
+            hero=i in hero_ids
+            peak_radius=radius*((.72+.30*v) if not hero else (1.02+.56*v+.16*onset))
+            dot(x,upper[i],peak_radius,reactive_color(i,float(v),1.0),(.76+.12*v) if not hero else (.94+.04*v))
 
         # Layer C: onset peaks leap above the envelope, still never below the floor.
-        local_peak=(energy>=np.roll(energy,1))&(energy>=np.roll(energy,-1))
-        peak_ids=np.flatnonzero(local_peak&(energy>.30))
-        if len(peak_ids):
-            order=peak_ids[np.argsort(energy[peak_ids])[-min(8,len(peak_ids)):]]
+        if hero_ids and onset>.22:
+            order=sorted(hero_ids,key=lambda index:energy[index])
             spark=float(np.clip(onset*onset_gain,0,1))
             for i in order:
                 lift=available*(.025+.095*spark)*(.55+.45*energy[i])
                 y=max(top_margin,upper[i]-lift)
-                dot(xx[i],y,radius*(.58+.58*energy[i]+.30*spark),reactive_color(int(i),float(energy[i]),1.12),.58+.38*spark)
+                dot(xx[i],y,radius*(.58+.58*energy[i]+.30*spark),p3,.58+.38*spark)
         pulse=np.clip(onset*onset_gain-.10,0,1)
         if pulse>0:
-            for k in range(-3,4):
-                spread=abs(k)/3
+            for k in range(-1,2):
+                spread=abs(k)
                 rise=available*(.08+.28*pulse)*(1-.38*spread)
                 x=center+k*radius*3.2
                 y=base-rise
-                dot(x,y,radius*(.62+.42*pulse-.045*abs(k)),moving_color(.48+k*.025,.08+pulse*.04),.34+.48*pulse)
+                accent=p3 if k==0 else moving_color(.48+k*.025,.08+pulse*.04)
+                dot(x,y,radius*(.62+.42*pulse-.045*abs(k)),accent,.34+.48*pulse)
     elif variant=="twin_bloom_v2":
         gap_ratio=max(.055,.115-onset*onset_gain*.035);xl=np.linspace(center-width*.47,center-width*gap_ratio,half_count);xright=2*center-xl[::-1]
         env=np.sin(np.linspace(.08,np.pi-.08,half_count))**.72;left_body=np.clip((.20+.80*left)*env,0,1);right_body=np.clip((.20+.80*right)*env[::-1],0,1);scale=h*.285*amp_gain

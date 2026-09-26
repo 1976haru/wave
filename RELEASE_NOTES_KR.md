@@ -1,4 +1,11 @@
-# Music Wave Studio v0.8.3.6 Beta
+# Music Wave Studio v0.8.3.7 Beta
+
+## Sparse Neon Signature
+
+- Tokyo Chill 시그니처의 band와 column 밀도를 낮춰 여백을 강화했습니다.
+- 소수의 hero peak와 절제된 neon highlight 중심으로 시각 계층을 정리했습니다.
+- premium하고 젊은 Chill / Night Drive 분위기로 튜닝했습니다.
+- 하단 고정, upward-only geometry, adaptive normalization 구조는 그대로 유지합니다.
 
 ## 이번 업그레이드 핵심
 
@@ -19,7 +26,7 @@
 - 강한 음악에서 최소 45px 이상의 추가 상승폭
 - 강한 상태에서 총 상승 높이 85px 이상
 - 에너지와 시간에 따른 색상 변화
-- v0.8.3.6 floor-anchor 템플릿 파라미터
+- v0.8.3.7 sparse-neon floor-anchor 템플릿 파라미터
 
 ## 기본 출력
 
