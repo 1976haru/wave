@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -31,21 +33,86 @@ def load_modifiers(directory: Path = UNIVERSAL_THEME_DIR) -> dict:
     return json.loads((directory / "modifiers.json").read_text(encoding="utf-8"))
 
 
-def auto_adapt(spectrum: np.ndarray, background_brightness: float) -> dict:
+def measure_audio_presence(audio_path: Path, ffmpeg_path: str, sample_rate: int = 24000) -> dict:
+    """Measure source-level dynamics before analyzer normalization changes scale."""
+    command = [ffmpeg_path, "-v", "error", "-i", str(audio_path), "-ac", "1", "-ar", str(sample_rate),
+               "-f", "f32le", "pipe:1"]
+    decoded = subprocess.run(command, check=True, stdout=subprocess.PIPE).stdout
+    samples = np.frombuffer(decoded, dtype="<f4").astype(np.float32)
+    if not len(samples):
+        raise RuntimeError(f"No decoded samples: {audio_path}")
+    frame_size = max(1, round(sample_rate * .05))
+    usable = len(samples) // frame_size * frame_size
+    frames = samples[:usable].reshape(-1, frame_size) if usable else samples.reshape(1, -1)
+    frame_rms = np.sqrt(np.mean(np.square(frames), axis=1) + 1e-12)
+    db = 20 * np.log10(np.maximum(frame_rms, 1e-7))
+    integrated = float(np.sqrt(np.mean(np.square(samples)) + 1e-12))
+    integrated_db = float(20 * np.log10(max(integrated, 1e-7)))
+    p20, median, p95 = (float(np.percentile(db, value)) for value in (20, 50, 95))
+    peak = float(np.max(np.abs(samples)))
+    crest = float(peak / max(integrated, 1e-7))
+    deltas = np.diff(frame_rms, prepend=frame_rms[0])
+    transient_threshold = float(np.median(deltas) + 2.5 * np.median(np.abs(deltas - np.median(deltas))))
+    transient_density = float(np.mean(deltas > max(transient_threshold, .001)))
+
+    fft_size = 4096
+    chunks = samples[:len(samples) // fft_size * fft_size].reshape(-1, fft_size)
+    if len(chunks):
+        power = np.mean(np.abs(np.fft.rfft(chunks * np.hanning(fft_size), axis=1)) ** 2, axis=0)
+        frequencies = np.fft.rfftfreq(fft_size, 1 / sample_rate)
+        totals = []
+        for low, high in ((20, 250), (250, 2000), (2000, min(12000, sample_rate / 2))):
+            totals.append(float(np.sum(power[(frequencies >= low) & (frequencies < high)])))
+        total = max(sum(totals), 1e-12)
+        bass, mid, high = (value / total for value in totals)
+    else:
+        bass = mid = high = 1 / 3
+    return {"integrated_rms": integrated, "integrated_dbfs": integrated_db, "p20_dbfs": p20,
+            "median_dbfs": median, "p95_dbfs": p95, "crest_factor": crest,
+            "dynamic_range_db": p95 - p20, "silence_ratio": float(np.mean(db < -48)),
+            "transient_density": transient_density, "bass_balance": bass,
+            "mid_balance": mid, "high_balance": high}
+
+
+def _audio_gain(stats: dict) -> float:
+    level = float(stats["integrated_dbfs"])
+    anchors = np.asarray([-42, -32, -24, -16, -10, -4], np.float32)
+    gains = np.asarray([1.35, 1.28, 1.15, 1.00, .88, .82], np.float32)
+    gain = float(np.interp(level, anchors, gains))
+    dynamic_range = float(stats.get("dynamic_range_db", 10))
+    crest = float(stats.get("crest_factor", 3))
+    silence = float(stats.get("silence_ratio", 0))
+    gain += np.clip((dynamic_range - 12) * .004, -.035, .035)
+    gain += np.clip((crest - 4) * .008, -.025, .025)
+    gain += min(.04, silence * .08)
+    return float(np.clip(gain, .82, 1.35))
+
+
+def auto_adapt(spectrum: np.ndarray, background_brightness: float, audio_stats: dict | None = None) -> dict:
     data = np.asarray(spectrum, np.float32)
     frame_energy = np.mean(data, axis=1)
     average = float(np.mean(frame_energy)); crest = float(np.percentile(frame_energy, 95) / max(1e-5, average))
     bands = np.mean(data, axis=0); thirds = np.array_split(bands, 3)
     bass, mid, high = (float(np.mean(part)) for part in thirds)
-    gain = 1.12 if average < .16 else (.90 if average > .38 else 1.0)
-    if crest > 3.0: gain *= .94
-    opacity = 1.07 if background_brightness > .62 else (.96 if background_brightness < .28 else 1.0)
-    brightness = 1.08 if background_brightness > .62 else 1.0
-    glow = .90 if background_brightness > .62 else (1.14 if background_brightness < .28 else 1.0)
+    if audio_stats:
+        gain = _audio_gain(audio_stats)
+    else:
+        gain = 1.18 if average < .16 else (.90 if average > .38 else 1.04)
+        if crest > 3.0: gain *= .96
+        gain = float(np.clip(gain, .82, 1.35))
+    bright_mix = float(np.clip((background_brightness - .30) / .45, 0, 1))
+    dark_mix = float(np.clip((.30 - background_brightness) / .30, 0, 1))
+    opacity = 1.0 + .20 * bright_mix - .01 * dark_mix
+    brightness = 1.0 + .28 * bright_mix
+    glow = 1.0 + .12 * dark_mix - .16 * bright_mix
+    normal_mix = .66 * bright_mix
+    blend_mode = "BRIGHT" if bright_mix >= .78 else ("DARK" if dark_mix >= .34 else "MID")
     return {"average_audio_energy": average, "crest_factor": crest, "bass_balance": bass,
             "mid_balance": mid, "high_balance": high, "background_brightness": background_brightness,
             "amplitude_multiplier": gain, "opacity_multiplier": opacity,
-            "brightness_multiplier": brightness, "glow_multiplier": glow}
+            "brightness_multiplier": brightness, "glow_multiplier": glow,
+            "normal_mix": normal_mix, "contrast_halo": .10 * bright_mix, "blend_mode": blend_mode,
+            **({f"audio_{key}": value for key, value in audio_stats.items()} if audio_stats else {})}
 
 
 def resolve_universal_profile(theme: dict, intensity: str = "STANDARD", width: str = "STANDARD",
@@ -133,20 +200,43 @@ def dot_geometry(profile: dict, values: np.ndarray) -> list[tuple[float, float, 
     return dots
 
 
+@lru_cache(maxsize=96)
+def _dot_sprite(radius_key: int, core_key: int, inner_key: int, outer_key: int,
+                inner_scale_key: int, outer_scale_key: int) -> np.ndarray:
+    radius = radius_key / 100
+    core_alpha, inner_alpha, outer_alpha = core_key / 1000, inner_key / 1000, outer_key / 1000
+    inner_scale, outer_scale = inner_scale_key / 100, outer_scale_key / 100
+    extent = max(5, int(math.ceil(radius * outer_scale + 5)))
+    scale = 4
+    size = extent * 2 + 1
+    mask = np.zeros((size * scale, size * scale), np.float32)
+    center = (extent * scale + scale // 2, extent * scale + scale // 2)
+    cv2.circle(mask, center, max(1, round(radius * scale)), 1.0, -1, cv2.LINE_AA)
+    core = mask * core_alpha
+    inner = cv2.GaussianBlur(mask, (0, 0), max(.5, radius * inner_scale * scale * .38)) * inner_alpha
+    outer = cv2.GaussianBlur(mask, (0, 0), max(.8, radius * outer_scale * scale * .62)) * outer_alpha
+    combined = cv2.resize(np.clip(core + inner + outer, 0, 1), (size, size), interpolation=cv2.INTER_AREA)
+    return combined[..., None]
+
+
 def render_frame(profile: dict, values: np.ndarray, width=960, height=160) -> np.ndarray:
-    # Two-times supersampling provides circular antialiasing while keeping a
-    # nine-style research bake-off practical on CPU.
-    scale = 2
-    core = np.zeros((height * scale, width * scale, 3), np.float32)
-    inner = np.zeros_like(core); outer = np.zeros_like(core)
-    for x, y, radius, color, alpha in dot_geometry(profile, values):
-        center = (round(x * scale), round(y * scale)); rgb = tuple(float(channel) for channel in color)
-        cv2.circle(outer, center, max(1, round(radius * float(profile["outer_glow_scale"]) * scale)), rgb, -1, cv2.LINE_AA)
-        cv2.circle(inner, center, max(1, round(radius * float(profile["inner_glow_scale"]) * scale)), rgb, -1, cv2.LINE_AA)
-        cv2.circle(core, center, max(1, round(radius * scale)), tuple(channel * alpha for channel in rgb), -1, cv2.LINE_AA)
-    outer = cv2.GaussianBlur(outer, (0, 0), 2.2 * scale) * float(profile["outer_glow"])
-    inner = cv2.GaussianBlur(inner, (0, 0), .75 * scale) * float(profile["inner_glow"])
-    return cv2.resize(np.clip(core + inner + outer, 0, 255).astype(np.uint8), (width, height), interpolation=cv2.INTER_AREA)
+    """Render cached antialiased dot sprites without frame-sized glow blurs."""
+    frame = np.zeros((height, width, 3), np.float32)
+    sprite = _dot_sprite(round(float(profile["dot_diameter"]) / 2 * 100),
+                         round(float(profile["core_alpha"]) * float(profile["opacity"]) * 1000),
+                         round(float(profile["inner_glow"]) * 1000), round(float(profile["outer_glow"]) * 1000),
+                         round(float(profile["inner_glow_scale"]) * 100), round(float(profile["outer_glow_scale"]) * 100))
+    half = sprite.shape[0] // 2
+    for x, y, _radius, color, _alpha in dot_geometry(profile, values):
+        cx, cy = round(x), round(y)
+        left, top = max(0, cx - half), max(0, cy - half)
+        right, bottom = min(width, cx - half + sprite.shape[1]), min(height, cy - half + sprite.shape[0])
+        if left >= right or top >= bottom:
+            continue
+        sx, sy = left - (cx - half), top - (cy - half)
+        patch = sprite[sy:sy + bottom - top, sx:sx + right - left]
+        frame[top:bottom, left:right] += patch * np.asarray(color, np.float32)
+    return np.clip(frame, 0, 255).astype(np.uint8)
 
 
 def robust_normalize(spectrum: np.ndarray) -> np.ndarray:

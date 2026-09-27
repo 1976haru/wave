@@ -5,9 +5,9 @@
     "DYNAMIC": {"amplitude_multiplier": 1.2, "attack_multiplier": 1.22, "release_offset": -0.04}
   },
   "width": {
-    "COMPACT": {"active_width": 335},
-    "STANDARD": {"active_width": 380},
-    "WIDE": {"active_width": 440}
+    "COMPACT": {"active_width": 360},
+    "STANDARD": {"active_width": 460},
+    "WIDE": {"active_width": 560}
   },
   "position": {
     "LEFT": {"margin": 70},
