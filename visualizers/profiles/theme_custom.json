@@ -1,0 +1,1 @@
+{"id":"CUSTOM","display_name":"Custom / 사용자 지정","bands":28,"dot_diameter":3.8,"vertical_gap":5.9,"attack":0.42,"release":0.86,"temporal_smoothing":2,"amplitude_gain":1.05,"inner_glow_alpha":0.21,"outer_glow_alpha":0.05,"tail_threshold":0.09,"gradient_stops":[[0.0,"#3CE6C0"],[0.38,"#63B3FF"],[0.72,"#8C72FF"],[1.0,"#FF82BA"]]}

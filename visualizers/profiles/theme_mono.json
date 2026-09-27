@@ -1,0 +1,1 @@
+{"id":"MONO","display_name":"Mono / 모노","bands":25,"dot_diameter":3.6,"vertical_gap":6.2,"attack":0.36,"release":0.87,"temporal_smoothing":2,"amplitude_gain":0.98,"inner_glow_alpha":0.12,"outer_glow_alpha":0.025,"tail_threshold":0.085,"gradient_stops":[[0.0,"#F4F4F2"],[0.58,"#C9CDD2"],[0.86,"#858D98"],[1.0,"#A9C0CF"]]}

@@ -318,6 +318,10 @@ class CPURenderer:
     name="CPU"
     def __init__(self):self.last_profile={}
     def render_rgba(self,w,h,state,template):
+        family=template.get("renderer_family")
+        if family:
+            from visualizers.registry import registry
+            renderer=registry.create(family);result=renderer.render_rgba(w,h,state,template);self.last_profile={"renderer_family":family};return result
         try:import cv2
         except ImportError:return self._numpy(w,h,state,template)
         total_started=perf_counter();values=np.asarray(state["values"],np.float32);setup_started=perf_counter();x0,step,base,maximum,bw=_geometry(w,h,values,template);colors=gradient_colors(template,len(values));setup_elapsed=perf_counter()-setup_started;allocation_started=perf_counter();opacity=int(255*np.clip(float(template.get("opacity",1)),0,1));style=str(template.get("renderer",template.get("style","bars"))).lower();rgb=np.zeros((h,w,3),np.uint8);alpha=np.zeros((h,w),np.uint8);allocation_elapsed=perf_counter()-allocation_started;draw_started=perf_counter();mirror=bool(template.get("mirror"));points=[]
@@ -525,6 +529,10 @@ class AdaptiveRenderer:
 class RendererFactory:
     @staticmethod
     def create(choice="AUTO",template=None):
+        family=(template or {}).get("renderer_family")
+        if family:
+            from visualizers.registry import registry
+            return registry.create(family)
         choice=choice.upper()
         if choice=="AUTO":return AdaptiveRenderer(template)
         if choice=="GPU":return GPUBarRenderer()

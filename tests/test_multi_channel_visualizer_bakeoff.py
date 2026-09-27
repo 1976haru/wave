@@ -54,4 +54,4 @@ def test_multi_channel_outputs_exist():
 
 
 def test_production_version_stays_frozen():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.3.9"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.0"

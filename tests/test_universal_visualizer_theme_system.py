@@ -24,9 +24,9 @@ def test_theme_intensity_width_position_and_color_are_independent():
     dynamic = resolve_universal_profile(neon, "DYNAMIC", "WIDE", "RIGHT")
     custom = resolve_universal_profile(neon, "STANDARD", "STANDARD", "CENTER", ["#112233", "#AABBCC"])
     assert calm["amplitude_gain"] < dynamic["amplitude_gain"]
-    assert calm["active_width"] == 335 and dynamic["active_width"] == 440
-    assert calm["x_position"] == 70 and dynamic["x_position"] == 450
-    assert custom["x_position"] == 290
+    assert calm["active_width"] == 360 and dynamic["active_width"] == 560
+    assert calm["x_position"] == 70 and dynamic["x_position"] == 330
+    assert custom["x_position"] == 250
     assert custom["gradient_stops"] == [[0.0, "#112233"], [1.0, "#AABBCC"]]
     assert custom["color_mode"] == "CUSTOM"
 
@@ -67,4 +67,4 @@ def test_cross_genre_outputs_and_contact_sheets_exist():
 
 
 def test_production_version_stays_frozen():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.3.9"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.0"

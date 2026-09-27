@@ -1,6 +1,9 @@
 압축을 풀고 EXE를 실행하세요.
 
-Music Wave Studio v0.8.3.9 BETA
+Music Wave Studio v0.8.4.0 BETA
+
+Universal Soft Round LED: Theme 7종, Intensity, Width, Position, Custom Color, Auto Adapt
+내 파형: AppData 저장, 안전한 .mwswave 가져오기/내보내기
 
 1. 음원 15곡이 들어 있는 폴더를 선택합니다.
 2. 추천 시그니처 3개 중 하나를 선택합니다.

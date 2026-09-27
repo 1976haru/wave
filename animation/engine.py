@@ -1,11 +1,17 @@
 from __future__ import annotations
 import numpy as np
+from visualizers.auto_adapt import amplitude_multiplier, audio_presence_from_features
 
 class AnimationEngine:
     """Sample cached analysis at t and apply frequency-aware dynamics."""
     def __init__(self, features, template):
         self.f,self.t,self.prev=features,template,None
         self.signature_calibration=None
+        self.visualizer_auto_gain=amplitude_multiplier(audio_presence_from_features(features))
+        if template.get("renderer_family")=="soft_round_led":
+            from visualizers.families.soft_round_led import resolve_profile
+            dynamics=resolve_profile(template,960,160,{"auto_gain":self.visualizer_auto_gain})
+            self.t["attack"]=1-float(dynamics["attack"]);self.t["decay"]=float(dynamics["release"])
         if str(template.get("renderer","")).lower()=="stereo_signature" and (template.get("adaptive_normalization") or template.get("signature_tier")=="FINAL"):
             spectrum=np.asarray(features["spectrum"],np.float32)
             low=np.percentile(spectrum,20,axis=0).astype(np.float32);high=np.percentile(spectrum,95,axis=0).astype(np.float32)
@@ -49,7 +55,7 @@ class AnimationEngine:
         else:
             retain = np.where(values > self.prev, np.clip(float(self.t.get("attack", .5)),0,1), np.clip(float(self.t.get("decay", .9)),0,1))
             self.prev = retain*self.prev + (1-retain)*values
-        result={"values":self.prev.copy(),"bass":signals[0],"mid":signals[1],"high":signals[2],"onset":float(self.f["onset"][i]),"time":float(seconds if absolute_seconds is None else absolute_seconds),"track_time":float(seconds)}
+        result={"values":self.prev.copy(),"bass":signals[0],"mid":signals[1],"high":signals[2],"onset":float(self.f["onset"][i]),"time":float(seconds if absolute_seconds is None else absolute_seconds),"track_time":float(seconds),"auto_gain":self.visualizer_auto_gain}
         if str(self.t.get("renderer","")).lower()=="stereo_signature":
             def delayed(ms,blend):
                 index=max(0,i-int(round(float(ms)*fps/1000.0)));raw=np.resize(self.f["spectrum"][index].astype(np.float32),len(self.prev));floor=float(self.t.get("dot_floor",.07));raw=floor+(1-floor)*np.power(np.clip(raw,0,1),float(self.t.get("soft_compression",.7)));return np.clip((1-blend)*self.prev+blend*raw,0,1)

@@ -1,0 +1,1 @@
+{"id":"WARM","display_name":"Warm / 따뜻함","bands":24,"dot_diameter":3.6,"vertical_gap":6.5,"attack":0.25,"release":0.89,"temporal_smoothing":3,"amplitude_gain":0.93,"inner_glow_alpha":0.15,"outer_glow_alpha":0.035,"tail_threshold":0.075,"high_band_weight":0.55,"gradient_stops":[[0.0,"#FFF2D5"],[0.45,"#EAD6A5"],[0.78,"#D8B77B"],[1.0,"#D7A7A3"]]}

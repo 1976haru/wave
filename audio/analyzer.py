@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable
 import numpy as np
-ANALYSIS_VERSION="2"
+ANALYSIS_VERSION="3"
 try:
     from scipy import signal as _signal
 except ImportError:_signal=None
@@ -54,7 +54,7 @@ def _smooth(values,use_scipy):
         except ValueError:return _signal.sosfilt(sos,values).astype(np.float32)
     return np.convolve(values,np.ones(3,np.float32)/3.0,mode="same").astype(np.float32)
 def analyze_pcm(x,sr,fps=30,bands=64,fft_size=4096,fft_window="hann",spectrum_mapping="AUTO",analyzer_backend="AUTO",min_frequency=40.0,max_frequency=18000.0):
-    samples=np.asarray(x,dtype=np.float32).reshape(-1);peak=float(np.max(np.abs(samples))) if samples.size else 0.0
+    samples=np.asarray(x,dtype=np.float32).reshape(-1);raw_samples=samples.copy();peak=float(np.max(np.abs(samples))) if samples.size else 0.0
     if peak>1e-8:samples=samples/peak
     use_scipy=analyzer_backend.upper()!="NUMPY" and _signal is not None;resolved="SCIPY" if use_scipy else "NUMPY"
     hop=max(1,int(round(sr/fps)));count=max(1,int(np.ceil(len(samples)/hop)));padded=np.pad(samples,(fft_size//2,fft_size+hop));starts=np.arange(count)*hop
@@ -70,7 +70,11 @@ def analyze_pcm(x,sr,fps=30,bands=64,fft_size=4096,fft_window="hann",spectrum_ma
     flux=np.maximum(np.diff(magnitude,axis=0,prepend=magnitude[:1]),0).mean(axis=1);onset=np.maximum(flux-_smooth(flux,use_scipy)*.45,0)
     spectrum=np.log1p(spectrum);spectrum=np.clip(spectrum/max(float(np.percentile(spectrum,99)),1e-8),0,1).astype(np.float32)
     result={name:_scaled(_smooth(value,use_scipy)) for name,value in detailed.items()}
-    result.update({"spectrum":spectrum,"rms":_scaled(_smooth(rms,use_scipy)),"bass":_scaled(.35*detailed["sub"]+.65*detailed["bass_detail"]),"mid":_scaled(.2*detailed["low_mid"]+.55*detailed["mid_detail"]+.25*detailed["upper_mid"]),"high":_scaled(.7*detailed["high_detail"]+.3*detailed["air"]),"onset":_scaled(onset),"sr":np.array([sr]),"fps":np.array([fps]),"bands":np.array([bands]),"duration":np.array([len(samples)/float(sr)]),"analysis_backend":np.array([resolved])})
+    raw_frame_rms=np.sqrt(np.mean(np.square(raw_samples[:len(raw_samples)//hop*hop].reshape(-1,hop)),axis=1)+1e-12) if len(raw_samples)>=hop else np.asarray([np.sqrt(np.mean(np.square(raw_samples))+1e-12)])
+    raw_db=20*np.log10(np.maximum(raw_frame_rms,1e-7));integrated=float(np.sqrt(np.mean(np.square(raw_samples))+1e-12));raw_peak=float(np.max(np.abs(raw_samples))) if raw_samples.size else 0.0
+    deltas=np.diff(raw_frame_rms,prepend=raw_frame_rms[:1]);delta_median=float(np.median(deltas));transient_threshold=delta_median+2.5*float(np.median(np.abs(deltas-delta_median)))
+    source_stats={"source_integrated_dbfs":20*np.log10(max(integrated,1e-7)),"source_p20_dbfs":np.percentile(raw_db,20),"source_median_dbfs":np.percentile(raw_db,50),"source_p95_dbfs":np.percentile(raw_db,95),"source_crest_factor":raw_peak/max(integrated,1e-7),"source_dynamic_range_db":np.percentile(raw_db,95)-np.percentile(raw_db,20),"source_silence_ratio":np.mean(raw_db<-48),"source_transient_density":np.mean(deltas>max(transient_threshold,.001))}
+    result.update({"spectrum":spectrum,"rms":_scaled(_smooth(rms,use_scipy)),"bass":_scaled(.35*detailed["sub"]+.65*detailed["bass_detail"]),"mid":_scaled(.2*detailed["low_mid"]+.55*detailed["mid_detail"]+.25*detailed["upper_mid"]),"high":_scaled(.7*detailed["high_detail"]+.3*detailed["air"]),"onset":_scaled(onset),"sr":np.array([sr]),"fps":np.array([fps]),"bands":np.array([bands]),"duration":np.array([len(samples)/float(sr)]),"analysis_backend":np.array([resolved]),**{key:np.asarray([value],np.float32) for key,value in source_stats.items()}})
     return result
 def cache_key(path,settings):
     payload={"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)};digest=hashlib.sha256(json.dumps(payload,sort_keys=True).encode())

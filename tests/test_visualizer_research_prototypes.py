@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_research_does_not_bump_production_version():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.3.9"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.0"
 
 
 def test_twelve_distinct_styles_and_three_reference_matches():

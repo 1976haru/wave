@@ -35,6 +35,9 @@ from template_system.thumbnails import get_thumbnail
 from ui.roi_widget import ROIDialog
 from tools.system_check import check_system,format_report
 from tools.validate_audio import validate as validate_audio_folder
+from visualizers.registry import registry as visualizer_registry
+from visualizers.schema import ADVANCED_FIELDS,WaveformValidationError,new_waveform
+from visualizers.user_profiles import UserWaveformStore
 
 class ReferenceAnalysisWorker(QObject):
     started=Signal();stage_changed=Signal(str,int,int);result_ready=Signal(object);warning=Signal(str);failed=Signal(str);cancelled=Signal();finished=Signal()
@@ -72,7 +75,7 @@ class TaskWorker(QObject):
             elif self.kind=="queue":
                 manager,sleep_enabled=self.payload
                 def render_track(track,job,progress_detail=None):
-                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(track.get("output_name") or (source.stem+output_extension(fmt))); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","video_codec","include_audio","canvas_mode"}});
+                    source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=copy.deepcopy(track.get("template_snapshot")) if track.get("template_snapshot") else resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(track.get("output_name") or (source.stem+output_extension(fmt))); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","video_codec","include_audio","canvas_mode"}});
                     if track.get("set_audio_files"): return render_set(track["set_audio_files"],target,template,options,track.get("timeline_path"),progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     return render_audio(source,target,template,options,progress_detail=progress_detail)
@@ -99,7 +102,7 @@ class TaskWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); app=QApplication.instance(); families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Noto Sans","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10)); self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle(f"Music Wave Studio v{get_version()}");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
+        super().__init__(); app=QApplication.instance(); families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Noto Sans","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10)); self.translator=Translator("ko");self.queue_manager=QueueManager();self.app_settings=AppSettings();self.waveform_store=UserWaveformStore(installed_families=set(visualizer_registry.ids()));self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "");self.setWindowTitle(f"Music Wave Studio v{get_version()}");self.resize(1500,900);self.audio_files=[];self.reference_images=[];self.reference_video=None;self.roi=None;self.template=load_template(resource_path("templates/01_clean_bars.json"));self.preview_engine=PreviewEngine();self.scheduler=FrameScheduler(24);self.current_time=0;self.thread=None;self.worker=None;self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None;self.reference_thread=None;self.reference_worker=None;self._syncing=False
         self.player=QMediaPlayer();self.audio_output=QAudioOutput();self.player.setAudioOutput(self.audio_output);self.player.positionChanged.connect(self._media_position);self.player.durationChanged.connect(self._media_duration)
         self.preview_timer=QTimer(self);self.preview_timer.setTimerType(Qt.PreciseTimer);self.preview_timer.setInterval(8);self.preview_timer.timeout.connect(self._tick);self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(90);self.debounce.timeout.connect(self.render_preview)
         root=QWidget();layout=QVBoxLayout(root);layout.addWidget(self._step_navigator());self.body_widget=QWidget();self.body_layout=QHBoxLayout(self.body_widget);layout.addWidget(self.body_widget,1);self.left_widget=self._left_panel();self.center_widget=self._center_panel();self.right_widget=self._right_panel();self.body_layout.addWidget(self.left_widget,2);self.body_layout.addWidget(self.center_widget,5);self.body_layout.addWidget(self.right_widget,3);self.progress_page=self._progress_page();self.body_layout.addWidget(self.progress_page,1);self.progress_page.hide();layout.addWidget(self._bottom_panel());self.setCentralWidget(root);self._apply_theme();self.refresh_templates();self.sync_controls();self._restore_settings();self._localize_existing();QTimer.singleShot(200,self._first_run_and_resume)
@@ -116,11 +119,34 @@ class MainWindow(QMainWindow):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         self.timeline=QSlider(Qt.Horizontal);self.timeline.setRange(0,0);self.timeline.sliderMoved.connect(self.seek);row.addWidget(self.timeline,1);self.time_label=QLabel("00:00 / 00:00");row.addWidget(self.time_label);v.addLayout(row);return box
     def _right_panel(self):
-        self.tabs=QTabWidget();self.tabs.setUsesScrollButtons(True);self.fields={};self.combos={};self.checks={};self.simple_controls=SimpleControls();self.simple_controls.changed.connect(self.simple_changed);self.tabs.addTab(self.simple_controls,"간편 설정");
+        self.tabs=QTabWidget();self.tabs.setUsesScrollButtons(True);self.fields={};self.combos={};self.checks={};self.simple_controls=SimpleControls();self.simple_controls.changed.connect(self.simple_changed);self.tabs.addTab(self.simple_controls,"간편 설정");self.tabs.addTab(self._universal_visualizer_tab(),"Universal LED");
         audio=("Bands",8,256,1),("Response",.1,3,.01),("Attack",0,1,.01),("Decay",0,1,.01),("Smoothing",0,.95,.01),("Onset Boost",0,2,.01),("Bass Weight",0,2,.01),("Mid Weight",0,2,.01),("High Weight",0,2,.01)
         design=("Width",.1,1,.01),("Height",.05,.9,.01),("Bar Width",.05,1,.01),("Gap",0,.95,.01),("Roundness",0,1,.01),("Opacity",0,1,.01)
         audio_widget=self._control_tab(audio,"audio");advanced=QFormLayout();self.analysis_mode=QComboBox();self.analysis_mode.addItems(["STANDARD","ADVANCED"]);self.fft_window=QComboBox();self.fft_window.addItems(["hann","hamming","blackman"]);self.spectrum_mapping=QComboBox();self.spectrum_mapping.addItems(["AUTO","LOG","PERCEPTUAL"]);audio_widget.layout().addRow("Analysis Mode",self.analysis_mode);audio_widget.layout().addRow("FFT Window",self.fft_window);audio_widget.layout().addRow("Spectrum Mapping",self.spectrum_mapping);self.tabs.addTab(audio_widget,"Audio");widget=self._control_tab(design,"design");form=widget.layout();self._combo(form,"Style",["bars","line","dot","ribbon","ring","radial","dot_matrix","twin_dot_matrix","dot_line_hybrid","echo_dots"],"renderer");self._combo(form,"Position",["top","center","bottom"],"position");self._check(form,"Mirror","mirror");self._color_button(form,"Main Color","color");self._check(form,"Gradient","gradient");self._color_button(form,"Gradient Start","gradient_start");self._color_button(form,"Gradient End","gradient_end");self.tabs.addTab(widget,"Design")
         effects=QWidget();f=QFormLayout(effects);self._check(f,"Glow","glow");self._number(f,"Glow Strength",0,2,.05,"glow_strength");self._number(f,"Glow Radius",0,40,1,"glow_radius");self._check(f,"Shadow","shadow");self.tabs.addTab(effects,"Effects");self.tabs.addTab(self._export_tab(),"Export");self.simple_controls.advanced.toggled.connect(self.toggle_advanced);self.toggle_advanced(False);scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(self.tabs);return scroll
+    def _universal_visualizer_tab(self):
+        widget=QWidget();layout=QVBoxLayout(widget);form=QFormLayout();self.uv_controls={};self.uv_color_buttons=[];self.uv_advanced={}
+        options=(("Renderer Family",["Soft Round LED"]),("Theme",["Neon / 네온","Warm / 따뜻함","Elegant / 우아함","Soft / 부드러움","Energetic / 역동적","Mono / 모노","Custom / 사용자 지정"]),("Intensity",["Calm","Standard","Dynamic"]),("Width",["Compact","Standard","Wide"]),("Position",["Left","Center","Right"]),("Color",["Theme","Custom"]))
+        for label,items in options:
+            combo=QComboBox();combo.addItems(items);combo.currentTextChanged.connect(self.universal_controls_changed);self.uv_controls[label]=combo;form.addRow(label,combo)
+        auto=QCheckBox();auto.setChecked(True);auto.toggled.connect(self.universal_controls_changed);self.uv_controls["Auto Adapt"]=auto;form.addRow("Auto Adapt",auto)
+        colors=QWidget();color_row=QHBoxLayout(colors);color_row.setContentsMargins(0,0,0,0)
+        for index,color in enumerate(("#FF3EB5","#E44AFF","#A658FF","#55D8FF")):
+            button=QPushButton(color);button.setStyleSheet(f"background:{color};color:#111");button.clicked.connect(lambda _checked=False,i=index:self.pick_universal_color(i));self.uv_color_buttons.append(button);color_row.addWidget(button)
+        form.addRow("Custom colors",colors);layout.addLayout(form)
+        buttons=QHBoxLayout()
+        for text,callback in (("Preview",self.render_preview),("내 파형으로 저장",self.save_my_waveform),("Theme 기본값 복원",self.reset_universal_defaults)):
+            button=QPushButton(text);button.clicked.connect(callback);buttons.addWidget(button)
+        layout.addLayout(buttons)
+        advanced=QGroupBox("세부 조정");advanced.setCheckable(True);advanced.setChecked(False);advanced_form=QFormLayout(advanced)
+        labels={"bands":"Bands","dot_diameter":"Dot size","horizontal_gap":"Horizontal gap","vertical_gap":"Vertical gap","amplitude_gain":"Amplitude","attack":"Attack","release":"Release","temporal_smoothing":"Smoothing","glow_strength":"Glow strength","glow_radius":"Glow radius","overall_opacity":"Opacity","brightness_compensation":"Brightness","min_frequency":"Frequency min","max_frequency":"Frequency max","low_band_weight":"Bass weight","mid_band_weight":"Mid weight","high_band_weight":"High weight","tail_threshold":"Tail threshold","x_offset":"X offset","y_offset":"Y offset","background_brightness":"Background brightness"}
+        for key,(low,high) in ADVANCED_FIELDS.items():
+            control=QSpinBox() if key in {"bands","temporal_smoothing"} else QDoubleSpinBox();control.setRange(low,high);control.setSingleStep(1 if isinstance(control,QSpinBox) else (.01 if high<=2 else .5));control.valueChanged.connect(lambda value,k=key:self.universal_advanced_changed(k,value));self.uv_advanced[key]=control;advanced_form.addRow(labels[key],control)
+        layout.addWidget(advanced);layout.addWidget(QLabel("내 파형 / My Waveforms"));self.my_waveform_list=QListWidget();self.my_waveform_list.itemDoubleClicked.connect(lambda _item:self.use_my_waveform());layout.addWidget(self.my_waveform_list)
+        actions=QHBoxLayout()
+        for text,callback in (("사용",self.use_my_waveform),("편집",self.use_my_waveform),("복제",self.duplicate_my_waveform),("이름변경",self.rename_my_waveform),("내보내기",self.export_my_waveform),("삭제",self.delete_my_waveform),("가져오기",self.import_my_waveform)):
+            button=QPushButton(text);button.clicked.connect(callback);actions.addWidget(button)
+        layout.addLayout(actions);QTimer.singleShot(0,self.refresh_my_waveforms);return widget
     def _control_tab(self,items,prefix):
         widget=QWidget();form=QFormLayout(widget)
         keys={"Bands":"bands","Response":"response","Attack":"attack","Decay":"decay","Smoothing":"smoothing","Onset Boost":"onset_boost","Bass Weight":"bass_weight","Mid Weight":"mid_weight","High Weight":"high_weight","Width":"width","Height":"height","Bar Width":"bar_width","Gap":"gap","Roundness":"roundness","Opacity":"opacity"}
@@ -238,7 +264,7 @@ class MainWindow(QMainWindow):
         output_name=f"{set_name}_WAVE{output_extension(snapshot["options"].format)}"
         timeline_path=str(Path(out)/(Path(output_name).stem+"_timeline.json"))
         preset_ref=snapshot["template"].get("id",snapshot["template"].get("name","01_clean_bars"))
-        tracks.append({"audio":snapshot["audio_files"][0],"set_audio_files":list(snapshot["audio_files"]),"preset":preset_ref,"format":snapshot["options"].format,"duration":set_duration,"output_name":output_name,"timeline_path":timeline_path,"status":"pending"})
+        tracks.append({"audio":snapshot["audio_files"][0],"set_audio_files":list(snapshot["audio_files"]),"preset":preset_ref,"template_snapshot":copy.deepcopy(snapshot["template"]),"format":snapshot["options"].format,"duration":set_duration,"output_name":output_name,"timeline_path":timeline_path,"status":"pending"})
         job=JobSet(name=name,tracks=tracks,preset=preset_ref,export=export_settings,output_dir=out)
         try:self.queue_manager.add(job);self.queue_panel.refresh();self.navigate_step(3);self.left_tabs.setCurrentWidget(self.queue_panel);self.status.setText(f"예약 작업에 추가됨: {len(self.queue_manager.sets)} / 5");return True
         except ValueError as exc:self.status.setText(str(exc));QMessageBox.warning(self,"예약 작업",str(exc));return False
@@ -338,6 +364,63 @@ class MainWindow(QMainWindow):
     def save_my_template(self):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
         if ok and name.strip():self.template["name"]=name.strip();safe="".join(c if c.isalnum() or c in "-_" else "_" for c in name.strip());save_template(Path("my_templates")/(safe+".json"),self.template);self.refresh_templates();self.status.setText("Saved to My Templates")
+    def _current_waveform_data(self,name="Current Waveform"):
+        settings=copy.deepcopy(self.template.get("universal_visualizer",{}));colors=[button.text() for button in self.uv_color_buttons]
+        return new_waveform(name,renderer_family="soft_round_led",theme=str(settings.get("theme","NEON")).upper(),intensity=str(settings.get("intensity","STANDARD")).upper(),width=str(settings.get("width","STANDARD")).upper(),position=str(settings.get("position","LEFT")).upper(),color_mode=str(settings.get("color_mode","THEME")).upper(),colors=colors if str(settings.get("color_mode","THEME")).upper()=="CUSTOM" else [],auto_adapt=bool(settings.get("auto_adapt",True)),advanced=copy.deepcopy(settings.get("advanced",{})))
+    def _apply_waveform_data(self,data):
+        base=load_template(resource_path("templates/00_universal_soft_round_led.json"));base["name"]=data["name"];base["renderer_family"]=data["renderer_family"];base["universal_visualizer"]={key:copy.deepcopy(data[key]) for key in ("theme","intensity","width","position","color_mode","colors","auto_adapt","advanced")};self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2)
+    def universal_controls_changed(self,*_):
+        if self._syncing:return
+        if self.template.get("renderer_family")!="soft_round_led":self.template=load_template(resource_path("templates/00_universal_soft_round_led.json"))
+        theme=self.uv_controls["Theme"].currentText().split(" / ")[0].upper();settings=self.template.setdefault("universal_visualizer",{})
+        settings.update({"theme":theme,"intensity":self.uv_controls["Intensity"].currentText().upper(),"width":self.uv_controls["Width"].currentText().upper(),"position":self.uv_controls["Position"].currentText().upper(),"color_mode":self.uv_controls["Color"].currentText().upper(),"colors":[button.text() for button in self.uv_color_buttons],"auto_adapt":self.uv_controls["Auto Adapt"].isChecked()});self.debounce.start()
+    def universal_advanced_changed(self,key,value):
+        if self._syncing:return
+        if self.template.get("renderer_family")!="soft_round_led":self.template=load_template(resource_path("templates/00_universal_soft_round_led.json"))
+        self.template.setdefault("universal_visualizer",{}).setdefault("advanced",{})[key]=value;self.debounce.start()
+    def pick_universal_color(self,index):
+        current=self.uv_color_buttons[index].text();color=QColorDialog.getColor(QColor(current),self)
+        if color.isValid():value=color.name().upper();self.uv_color_buttons[index].setText(value);self.uv_color_buttons[index].setStyleSheet(f"background:{value};color:#111");self.uv_controls["Color"].setCurrentText("Custom");self.universal_controls_changed()
+    def reset_universal_defaults(self):
+        theme=self.uv_controls["Theme"].currentText().split(" / ")[0].upper();self.template=load_template(resource_path("templates/00_universal_soft_round_led.json"));self.template["universal_visualizer"]["theme"]=theme;self.sync_controls();self.debounce.start()
+    def refresh_my_waveforms(self):
+        if not hasattr(self,"my_waveform_list"):return
+        self.my_waveform_list.clear()
+        for path,data in self.waveform_store.list():item=QListWidgetItem(data["name"]);item.setToolTip(data.get("description", ""));item.setData(Qt.UserRole,str(path));self.my_waveform_list.addItem(item)
+    def _selected_waveform_path(self):
+        item=self.my_waveform_list.currentItem() if hasattr(self,"my_waveform_list") else None
+        return Path(item.data(Qt.UserRole)) if item else None
+    def save_my_waveform(self):
+        name,ok=QInputDialog.getText(self,"내 파형으로 저장","파형 이름")
+        if ok and name.strip():
+            try:self.waveform_store.save(self._current_waveform_data(name.strip()),overwrite=False);self.refresh_my_waveforms();self.status.setText("내 파형에 저장했습니다.")
+            except WaveformValidationError as exc:QMessageBox.warning(self,"저장 실패",str(exc))
+    def use_my_waveform(self):
+        path=self._selected_waveform_path()
+        if path:
+            try:self._apply_waveform_data(self.waveform_store.load(path))
+            except (OSError,WaveformValidationError) as exc:QMessageBox.warning(self,"불러오기 실패",str(exc))
+    def duplicate_my_waveform(self):
+        path=self._selected_waveform_path()
+        if path:self.waveform_store.duplicate(path);self.refresh_my_waveforms()
+    def rename_my_waveform(self):
+        path=self._selected_waveform_path()
+        if path:
+            name,ok=QInputDialog.getText(self,"이름변경","새 이름")
+            if ok and name.strip():self.waveform_store.rename(path,name.strip());self.refresh_my_waveforms()
+    def delete_my_waveform(self):
+        path=self._selected_waveform_path()
+        if path and QMessageBox.question(self,"삭제","선택한 내 파형을 삭제할까요?",QMessageBox.Yes|QMessageBox.No)==QMessageBox.Yes:self.waveform_store.delete(path);self.refresh_my_waveforms()
+    def import_my_waveform(self):
+        source,_=QFileDialog.getOpenFileName(self,"파형 가져오기","","Music Wave Studio Waveform (*.mwswave)")
+        if source:
+            try:self.waveform_store.import_file(source);self.refresh_my_waveforms();self.status.setText("파형을 가져왔습니다.")
+            except (OSError,ValueError) as exc:QMessageBox.warning(self,"가져오기 실패",str(exc))
+    def export_my_waveform(self):
+        source=self._selected_waveform_path()
+        if source:
+            target,_=QFileDialog.getSaveFileName(self,"파형 내보내기",source.name,"Music Wave Studio Waveform (*.mwswave)")
+            if target:self.waveform_store.export_file(source,target);self.status.setText("파형을 내보냈습니다.")
     def sync_controls(self):
         self._syncing=True
         for key,control in self.fields.items():
@@ -346,6 +429,13 @@ class MainWindow(QMainWindow):
             elif value is not None:control.setValue(value)
         for key,c in self.combos.items():c.setCurrentText(str(self.template.get(key,c.currentText())))
         for key,c in self.checks.items():c.setChecked(bool(self.template.get(key,False)))
+        if hasattr(self,"uv_controls"):
+            settings=self.template.get("universal_visualizer",{});theme=str(settings.get("theme","NEON")).upper();labels={"NEON":"Neon / 네온","WARM":"Warm / 따뜻함","ELEGANT":"Elegant / 우아함","SOFT":"Soft / 부드러움","ENERGETIC":"Energetic / 역동적","MONO":"Mono / 모노","CUSTOM":"Custom / 사용자 지정"}
+            self.uv_controls["Theme"].setCurrentText(labels.get(theme,labels["NEON"]));self.uv_controls["Intensity"].setCurrentText(str(settings.get("intensity","STANDARD")).title());self.uv_controls["Width"].setCurrentText(str(settings.get("width","STANDARD")).title());self.uv_controls["Position"].setCurrentText(str(settings.get("position","LEFT")).title());self.uv_controls["Color"].setCurrentText(str(settings.get("color_mode","THEME")).title());self.uv_controls["Auto Adapt"].setChecked(bool(settings.get("auto_adapt",True)))
+            colors=settings.get("colors",["#FF3EB5","#E44AFF","#A658FF","#55D8FF"])
+            for index,button in enumerate(self.uv_color_buttons):value=colors[min(index,len(colors)-1)] if colors else "#FFFFFF";button.setText(value);button.setStyleSheet(f"background:{value};color:#111")
+            advanced=settings.get("advanced",{})
+            for key,control in self.uv_advanced.items():control.setValue(advanced.get(key,control.minimum()))
         self._syncing=False
     def controls_changed(self,*_):
         if self._syncing:return
@@ -419,7 +509,7 @@ class MainWindow(QMainWindow):
     def build_current_job_snapshot(self):
         output=self.current_output_dir
         profile=self.template.get("canvas_profile",{})
-        if self.canvas_mode.currentIndex()==0 and self.template.get("category") in {"chill_rap_signature","signature_experimental_v2","signature_experimental_v3"}:width,height=int(profile.get("width",960)),int(profile.get("height",160))
+        if self.canvas_mode.currentIndex()==0 and (self.template.get("category") in {"chill_rap_signature","signature_experimental_v2","signature_experimental_v3","universal_visualizer"} or self.template.get("renderer_family")):width,height=int(profile.get("width",960)),int(profile.get("height",160))
         elif self.canvas_mode.currentIndex()==0 and self.export_format.currentText()=="mp4":width,height=960,240
         elif self.canvas_mode.currentIndex()==0 and self.export_format.currentText() in ("webm","mov"):width,height=960,240
         elif self.resolution.currentText()=="Custom":width,height=self.custom_width.value(),self.custom_height.value()

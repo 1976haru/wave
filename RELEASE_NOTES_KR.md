@@ -1,4 +1,12 @@
-# Music Wave Studio v0.8.3.9 Beta
+# Music Wave Studio v0.8.4.0 Beta
+
+## Universal Visualizer Production Integration
+
+- Soft Round LED renderer family와 범용 Theme 7종
+- 독립적인 Intensity / Width / Position / Custom Color / Auto Adapt
+- AppData에 유지되는 My Waveforms
+- JSON-only `.mwswave` Import / Export 및 schema validation
+- 기존 template과 queue/resume 호환 유지
 
 ## Chill Girl Vibes Lower-Third Dotted Wave
 
