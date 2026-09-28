@@ -73,22 +73,30 @@ def signature_geometry(width: int, height: int, state: dict, template: dict) -> 
     elif variant=="SILK_WAVE":
         count=46; raw=_resample(state["values"],count); raw*=np.linspace(.78,1.05,count); smooth=raw.copy()
         for _ in range(3):smooth=np.convolve(np.pad(smooth,(2,2),mode="edge"),(.08,.22,.40,.22,.08),mode="valid")
-        drive=(.66+.42*mid+.18*high+.12*onset)*p["gain"]; rise=np.minimum(np.power(smooth,.78)*drive,p["ceiling"])*maximum*.72; xs=np.linspace(p["x0"],p["x0"]+p["active_width"],count); ys=p["base"]-rise
-        line(np.column_stack((xs,ys)),p["colors"][2],.60,max(1,round(1.5*p["size"])))
-        line(np.column_stack((xs,ys+3.2*p["size"])),p["colors"][0],.25,1)
-        for i in range(0,count,2):dot(xs[i],ys[i],1.75*p["size"],p["colors"][i%4],.76)
+        # Mid/upper-mid energy drives a visible but still soft ribbon.  Two close
+        # edges preserve the silk identity without turning it into a thick bar.
+        drive=(.58+.62*mid+.30*high+.16*onset)*p["gain"]; rise=np.minimum(np.power(smooth,.74)*drive,p["ceiling"])*maximum*1.04; xs=np.linspace(p["x0"],p["x0"]+p["active_width"],count); ys=p["base"]-rise
+        edge=2.3*p["size"]
+        line(np.column_stack((xs,ys-edge)),p["colors"][2],.54,max(1,round(1.35*p["size"])))
+        line(np.column_stack((xs,ys+edge)),p["colors"][0],.42,1)
+        for i in range(1,count,3):dot(xs[i],ys[i],2.25*p["size"],p["colors"][i%4],.88)
         if onset>.28:
-            for i in np.argsort(smooth)[-2:]:dot(xs[i],ys[i]-3*p["size"],2.25*p["size"],p["colors"][-1],min(1,.45+onset*.5))
+            for i in np.argsort(smooth)[-2:]:dot(xs[i],ys[i]-3*p["size"],2.65*p["size"],p["colors"][-1],min(1,.48+onset*.46))
     else:
         half=24; left_raw=_resample(state.get("left_values",state["values"]),half); right_raw=_resample(state.get("right_values",state["values"]),half)
-        left=np.convolve(np.pad(left_raw,(2,2),mode="edge"),(.08,.22,.40,.22,.08),mode="valid")*(.72+.34*mid)*p["gain"]
-        right=np.convolve(np.pad(np.roll(right_raw,2),(2,2),mode="edge"),(.08,.22,.40,.22,.08),mode="valid")*(.75+.38*bass)*p["gain"]
-        left=np.minimum(left,p["ceiling"]);right=np.minimum(right,p["ceiling"]);gap=p["active_width"]*(.13-.055*np.clip(onset,0,1)); wing=(p["active_width"]-gap)/2; center=p["x0"]+p["active_width"]/2
-        xl=np.linspace(p["x0"],center-gap/2,half); xr=np.linspace(center+gap/2,p["x0"]+p["active_width"],half); yl=p["base"]-np.clip(left,0,1)*maximum*.62; yr=p["base"]-np.clip(right,0,1)*maximum*.66
-        line(np.column_stack((xl,yl)),p["colors"][0],.42,1);line(np.column_stack((xr,yr)),p["colors"][2],.42,1)
-        for i in range(0,half,2):dot(xl[i],yl[i],1.8*p["size"],p["colors"][0 if i<half*.65 else 1],.82);dot(xr[i],yr[i],1.8*p["size"],p["colors"][2],.82)
-        if onset>.52:
-            alpha=min(1,(onset-.52)*1.8);line([(xl[-1],yl[-1]),(center,(yl[-1]+yr[0])/2-4*onset),(xr[0],yr[0])],p["colors"][1],alpha,1);dot(center,(yl[-1]+yr[0])/2-4*onset,2.2*p["size"],p["colors"][3],alpha)
+        left=np.convolve(np.pad(left_raw,(2,2),mode="edge"),(.08,.22,.40,.22,.08),mode="valid")*(.60+.58*mid+.18*high)*p["gain"]
+        right=np.convolve(np.pad(np.roll(right_raw,2),(1,1),mode="edge"),(.18,.64,.18),mode="valid")*(.62+.58*bass+.12*mid)*p["gain"]
+        left=np.minimum(left,p["ceiling"]);right=np.minimum(right,p["ceiling"]);approach=np.clip((onset-.22)/.70,0,1);gap=p["active_width"]*(.18-.105*approach);center=p["x0"]+p["active_width"]/2
+        xl=np.linspace(p["x0"],center-gap/2,half);xr=np.linspace(center+gap/2,p["x0"]+p["active_width"],half)
+        # A restrained ten-pixel vertical separation and distinct envelopes make
+        # the speakers readable as two independent waves even without colour.
+        offset=5.0*p["size"];yl=p["base"]-offset-np.clip(left,0,1)*maximum*.84;yr=p["base"]+offset-np.clip(right,0,1)*maximum*.89
+        line(np.column_stack((xl,yl)),p["colors"][0],.52,1);line(np.column_stack((xr,yr)),p["colors"][2],.52,1)
+        for i in range(0,half,2):dot(xl[i],yl[i],2.0*p["size"],p["colors"][0 if i<half*.65 else 1],.88);dot(xr[i],yr[i],2.0*p["size"],p["colors"][2],.88)
+        bridge_alpha=0.0
+        if onset>.70:
+            bridge_alpha=min(1,(onset-.70)/.24);bridge_y=(yl[-1]+yr[0])/2-3*onset;line([(xl[-1],yl[-1]),(center,bridge_y),(xr[0],yr[0])],p["colors"][1],bridge_alpha*.72,1);dot(center,bridge_y,2.25*p["size"],p["colors"][3],bridge_alpha*.82)
+        p["interaction"]={"gap":float(gap),"approach":float(approach),"bridge_alpha":float(bridge_alpha)}
     return {"profile":p,"dots":dots,"lines":lines,"bars":bars,"bounds":(max(0,int(p["x0"]-12)),max(0,int(p["base"]-maximum-12)),min(width,int(p["x0"]+p["active_width"]+12)),min(height,int(p["base"]+12)))}
 
 

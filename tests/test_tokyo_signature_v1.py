@@ -72,3 +72,27 @@ def test_signature_my_waveform_save_reload():
     store=UserWaveformStore("validation_results/tokyo_signature_v1/_waveform_store",{"soft_round_led","tokyo_signature"})
     waveform=new_waveform("Tokyo Signature Test",renderer_family="tokyo_signature",position="CENTER",signature={"variant":"SILK_WAVE","motion":"DYNAMIC","size":1.08,"vertical_position":"CENTER","horizontal_position":"CENTER","presence":"DEFAULT","auto_adapt":True,"local_adapt":True,"colors":[]})
     path=store.save(waveform,overwrite=True);loaded=store.load(path);assert loaded["signature"]==waveform["signature"] and loaded["renderer_family"]=="tokyo_signature"
+
+
+def test_silk_v11_has_readable_dual_edge_and_sparse_pearls():
+    template=load_template(FILES[1]);geo=signature_geometry(960,160,state(.58,.48),template)
+    assert len(geo["lines"])==2
+    assert 10 <= len(geo["dots"]) <= 20
+    first=np.asarray(geo["lines"][0][0]);second=np.asarray(geo["lines"][1][0])
+    assert 3.0 <= float(np.median(second[:,1]-first[:,1])) <= 6.0
+    assert float(geo["profile"]["base"]-min(first[:,1])) >= 35
+
+
+def test_two_hearts_v11_separates_approaches_bridges_and_releases():
+    template=load_template(FILES[2]);quiet=state(.38,.18);quiet["onset"]=.05
+    onset=state(.68,.62);onset["onset"]=.84
+    strong=state(.78,.72);strong["onset"]=.98
+    released=state(.42,.24);released["onset"]=.08
+    q=signature_geometry(960,160,quiet,template);o=signature_geometry(960,160,onset,template);s=signature_geometry(960,160,strong,template);r=signature_geometry(960,160,released,template)
+    assert q["profile"]["interaction"]["gap"] > o["profile"]["interaction"]["gap"]
+    assert o["profile"]["interaction"]["bridge_alpha"] > 0
+    assert s["profile"]["interaction"]["bridge_alpha"] > o["profile"]["interaction"]["bridge_alpha"]
+    assert r["profile"]["interaction"]["bridge_alpha"] == 0
+    assert r["profile"]["interaction"]["gap"] > o["profile"]["interaction"]["gap"]
+    left,right=q["lines"][0][0],q["lines"][1][0]
+    assert abs(float(np.median(left[:,1])-np.median(right[:,1]))) >= 6
