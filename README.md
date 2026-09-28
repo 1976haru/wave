@@ -2,6 +2,8 @@
 
 Production-oriented audio-reactive waveform designer with cached analysis, responsive live preview, reference-assisted design, CPU/GPU RGBA rendering, resumable batch export, reusable templates, and Windows distribution support.
 
+v0.8.4.1 adds optional local-background adaptation for Soft Round LED waveforms: waveform-ROI luminance and texture analysis, theme-derived dot underlay, bright-scene core contrast, reduced glow, and temporally smoothed sampling without geometry or motion changes.
+
 ## Recommended environment
 
 - Windows 10/11 64-bit

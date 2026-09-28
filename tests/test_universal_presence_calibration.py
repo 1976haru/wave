@@ -71,4 +71,4 @@ def test_presence_outputs_cover_35_combinations_when_generated():
 
 
 def test_production_version_remains_frozen():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.0"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.1"

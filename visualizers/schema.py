@@ -69,13 +69,13 @@ def validate_waveform(data: dict, installed_families: set[str] | None = None) ->
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not low <= float(value) <= high:
             raise WaveformValidationError(f"Advanced value out of range: {key}")
         clean_advanced[key] = int(value) if key in {"bands", "temporal_smoothing"} else float(value)
-    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "advanced"}
+    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced"}
     warnings += [f"Ignored field: {key}" for key in data if key not in known]
     clean = {"format": FORMAT, "format_version": FORMAT_VERSION, "name": name,
              "description": str(data.get("description", ""))[:500], "renderer_family": family,
              "theme": theme, "intensity": intensity, "width": width, "position": position,
              "color_mode": color_mode, "colors": [str(c).upper() for c in colors] if color_mode == "CUSTOM" else [],
-             "auto_adapt": bool(data.get("auto_adapt", True)), "advanced": clean_advanced}
+             "auto_adapt": bool(data.get("auto_adapt", True)), "local_adapt": bool(data.get("local_adapt", True)), "advanced": clean_advanced}
     return clean, warnings
 
 
@@ -83,6 +83,6 @@ def new_waveform(name: str, **values) -> dict:
     data = {"format": FORMAT, "format_version": FORMAT_VERSION, "name": name, "description": "",
             "renderer_family": "soft_round_led", "theme": "NEON", "intensity": "STANDARD",
             "width": "STANDARD", "position": "LEFT", "color_mode": "THEME", "colors": [],
-            "auto_adapt": True, "advanced": {}}
+            "auto_adapt": True, "local_adapt": True, "advanced": {}}
     data.update(deepcopy(values))
     return validate_waveform(data, {"soft_round_led"})[0]

@@ -10,9 +10,13 @@ import numpy as np
 
 from core.paths import resource_path
 from visualizers.auto_adapt import background_adjustment
+from visualizers.local_background import (
+    adaptation_from_metrics, analyze_local_background, derive_underlay_color,
+    smooth_adaptation, waveform_roi,
+)
 
 PROFILE_DIR = Path(resource_path("visualizers/profiles"))
-SUPPORTED_PARAMETERS = ("theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "advanced")
+SUPPORTED_PARAMETERS = ("theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced")
 
 
 @lru_cache(maxsize=1)
@@ -72,6 +76,13 @@ def _color_at(stops: list, position: float, level: float, brightness: float) -> 
     return tuple(int(np.clip(value, 0, 255)) for value in (first * (1 - mix) + second * mix) * brightness * (.82 + .18 * level))
 
 
+def _adapt_color(color: tuple[int, int, int], brightness: float, saturation: float) -> np.ndarray:
+    value = np.asarray(color, np.float32) / 255.0
+    gray = float(np.dot(value, (.2126, .7152, .0722)))
+    value = gray + (value - gray) * saturation
+    return np.clip(value * brightness * 255.0, 0, 255)
+
+
 @lru_cache(maxsize=96)
 def _color_lut(stops_key: tuple, brightness_key: int, bands: int, rows: int) -> np.ndarray:
     stops = [[position, color] for position, color in stops_key]
@@ -122,19 +133,70 @@ def _sprite(radius_key, core_key, inner_key, outer_key, inner_scale_key, outer_s
     return cv2.resize(np.clip(core + inner + outer, 0, 1), (size, size), interpolation=cv2.INTER_AREA)[..., None]
 
 
+@lru_cache(maxsize=64)
+def _underlay_sprite(radius_key: int, alpha_key: int, growth_key: int) -> np.ndarray:
+    radius = radius_key / 100 + growth_key / 100
+    extent = max(4, math.ceil(radius + 2)); scale = 4; size = extent * 2 + 1
+    mask = np.zeros((size * scale, size * scale), np.float32); center = (extent * scale + scale // 2,) * 2
+    cv2.circle(mask, center, max(1, round(radius * scale)), alpha_key / 1000, -1, cv2.LINE_AA)
+    return cv2.resize(mask, (size, size), interpolation=cv2.INTER_AREA)[..., None]
+
+
+def _paint(frame: np.ndarray, sprite: np.ndarray, cx: int, cy: int, color: np.ndarray) -> None:
+    half = sprite.shape[0] // 2; height, width = frame.shape[:2]
+    left, top = max(0, cx - half), max(0, cy - half)
+    right, bottom = min(width, cx - half + sprite.shape[1]), min(height, cy - half + sprite.shape[0])
+    if left >= right or top >= bottom:
+        return
+    sx, sy = left - (cx - half), top - (cy - half)
+    patch = sprite[sy:sy + bottom - top, sx:sx + right - left]
+    frame[top:bottom, left:right] += patch * color
+
+
 class SoftRoundLEDRenderer:
     name = "CPU/SOFT_ROUND_LED"
+    def __init__(self):
+        self._local_adaptation = None
+        self._frame_index = 0
+        self.last_local_metrics = None
+
     def render_rgba(self, width: int, height: int, state: dict, template: dict) -> np.ndarray:
         profile = resolve_profile(template, width, height, state); frame = np.zeros((height, width, 3), np.float32)
+        coverage = np.zeros_like(frame)
+        settings = template.get("universal_visualizer", template)
+        background = state.get("background_frame")
+        if settings.get("local_adapt", True) and background is not None:
+            background = np.asarray(background)
+            if background.shape[:2] != (height, width):
+                background = cv2.resize(background, (width, height), interpolation=cv2.INTER_AREA)
+            # Sample every third frame and interpolate with EMA to avoid both cost and flicker.
+            if self._frame_index % 3 == 0 or self._local_adaptation is None:
+                metrics = analyze_local_background(background, waveform_roi(profile, width, height))
+                current = adaptation_from_metrics(metrics)
+                self._local_adaptation = smooth_adaptation(self._local_adaptation, current)
+                self.last_local_metrics = metrics
+            local = self._local_adaptation
+        else:
+            local = {"difficulty": 0.0, "underlay_alpha": 0.0, "underlay_scale": .55,
+                     "core_alpha_multiplier": 1.0, "core_brightness_multiplier": 1.0,
+                     "core_saturation_multiplier": 1.0, "glow_multiplier": 1.0}
+        self._frame_index += 1
         glow = profile["glow_radius"]
-        sprite = _sprite(round(profile["dot_diameter"] / 2 * 100), round(profile["core_alpha"] * profile["overall_opacity"] * 1000),
-                         round(profile["inner_glow_alpha"] * 1000), round(profile["outer_glow_alpha"] * 1000),
-                         round(glow[0] * 100), round(glow[1] * 100)); half = sprite.shape[0] // 2
+        glow_multiplier = local["glow_multiplier"]
+        sprite = _sprite(round(profile["dot_diameter"] / 2 * 100), round(min(1.0, profile["core_alpha"] * profile["overall_opacity"] * local["core_alpha_multiplier"]) * 1000),
+                         round(profile["inner_glow_alpha"] * glow_multiplier * 1000), round(profile["outer_glow_alpha"] * glow_multiplier * 1000),
+                         round(glow[0] * 100), round(glow[1] * 100))
+        underlay = _underlay_sprite(round(profile["dot_diameter"] / 2 * 100), round(local["underlay_alpha"] * 1000), round(local["underlay_scale"] * 100))
+        theme = str(settings.get("theme", "NEON"))
+        if str(settings.get("color_mode", "THEME")).upper() == "CUSTOM": theme = "CUSTOM"
+        underlay_color = np.asarray(derive_underlay_color(profile["gradient_stops"], theme), np.float32)
         for x, y, _radius, color, _alpha in dot_geometry(profile, state["values"]):
-            cx, cy = round(x), round(y); left, top = max(0, cx - half), max(0, cy - half)
-            right, bottom = min(width, cx - half + sprite.shape[1]), min(height, cy - half + sprite.shape[0])
-            if left >= right or top >= bottom: continue
-            sx, sy = left - (cx - half), top - (cy - half); patch = sprite[sy:sy + bottom - top, sx:sx + right - left]
-            frame[top:bottom, left:right] += patch * np.asarray(color, np.float32)
-        rgb = np.clip(frame, 0, 255).astype(np.uint8); alpha = np.max(rgb, axis=2)
+            cx, cy = round(x), round(y)
+            if local["underlay_alpha"] > 0:
+                _paint(frame, underlay, cx, cy, underlay_color)
+                _paint(coverage, underlay, cx, cy, np.full(3, 255, np.float32))
+            core_color = _adapt_color(color, local["core_brightness_multiplier"], local["core_saturation_multiplier"])
+            _paint(frame, sprite, cx, cy, core_color)
+            _paint(coverage, sprite, cx, cy, np.full(3, 255, np.float32))
+        rgb = np.clip(frame, 0, 255).astype(np.uint8); alpha = np.max(np.clip(coverage, 0, 255).astype(np.uint8), axis=2)
         return np.dstack((rgb, alpha))

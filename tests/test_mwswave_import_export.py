@@ -26,10 +26,10 @@ def test_save_reload_duplicate_rename_delete():
 
 
 def test_export_import_roundtrip():
-    target = store(); source = target.save(new_waveform("Warm Gold", theme="WARM"))
+    target = store(); source = target.save(new_waveform("Warm Gold", theme="WARM", local_adapt=False))
     exported = target.export_file(source, TEST_DIR / "shared")
     source.unlink(); imported, warnings = target.import_file(exported)
-    assert not warnings and target.load(imported)["theme"] == "WARM"
+    assert not warnings and target.load(imported)["theme"] == "WARM" and target.load(imported)["local_adapt"] is False
 
 
 def test_invalid_json_malicious_and_unknown_family_rejected():

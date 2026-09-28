@@ -1,5 +1,5 @@
 {
-  "version": "0.8.4.0",
+  "version": "0.8.4.1",
   "id": "UNIVERSAL_SOFT_ROUND_LED",
   "name": "Universal Soft Round LED",
   "name_ko": "범용 소프트 라운드 LED",
@@ -25,6 +25,7 @@
     "color_mode": "THEME",
     "colors": [],
     "auto_adapt": true,
+    "local_adapt": true,
     "advanced": {}
   }
 }
