@@ -213,7 +213,14 @@ class MainWindow(QMainWindow):
             if answer==QMessageBox.Yes:self.start_queue()
             elif answer==QMessageBox.Cancel:self.queue_manager.clear();self.queue_panel.refresh()
     def _queue_completion(self,result):
-        self._show_progress_page(False);self.navigate_step(4);self.status.setText(f"대기열 작업 완료. 성공 {result.tracks_success}곡 / 실패 {result.tracks_failed}곡")
+        self.queue_manager.prune_completed()
+        self.queue_panel.refresh()
+        self._show_progress_page(False);self.navigate_step(4)
+        if self.queue_manager.sets:
+            message=f"예약 작업 완료: 성공 {result.sets_success}개 / 실패 {result.sets_failed}개. 미완료·실패 작업은 목록에 남겨 두었습니다."
+        else:
+            message=f"예약 작업 완료: 성공 {result.sets_success}개 / 실패 0개. 완료 작업은 목록에서 자동 정리되었습니다."
+        self.status.setText(message)
     def _step_navigator(self):
         widget=QWidget();layout=QHBoxLayout(widget);self.step_labels=[]
         for index,key in enumerate(("step1","step2","step3","step4","step5")):
@@ -491,7 +498,7 @@ class MainWindow(QMainWindow):
         elif kind in ("images","video"):self.apply_reference(result)
         elif kind=="validation":self.status.setText(f"Validation: {result['successful_tracks']}/{result['total_tracks']} ready; report saved");return
         elif kind=="playlist":self.status.setText(f"Playlist complete: {result['success']} success, {result['failed']} failed");return
-        elif kind=="queue":self.queue_panel.refresh();self._queue_completion(result);return
+        elif kind=="queue":self._queue_completion(result);return
         else:
             self.total_progress.setValue(100)
             successful=[item for item in result if item.get("status")=="success"]

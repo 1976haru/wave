@@ -1,4 +1,13 @@
-# Music Wave Studio v0.8.5.0
+# Music Wave Studio v0.8.5.1
+
+## v0.8.5.1 Queue completion hotfix
+
+- 예약 작업은 완전히 성공하면 완료 직후 목록과 저장 상태에서 자동 정리됩니다.
+- 완료 작업이 5개 슬롯을 차지해 새 작업 추가를 막던 문제를 수정했습니다.
+- 실패하거나 취소된 작업은 확인 및 재시도를 위해 목록에 유지됩니다.
+- 기존 queue_state.json에 저장된 완료 작업도 앱 시작 시 정리됩니다.
+
+## v0.8.5.0
 
 ## Tokyo Chill Signature V1
 

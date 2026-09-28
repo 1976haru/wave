@@ -35,3 +35,10 @@ def test_start_queue_switches_to_progress_page(window,monkeypatch):
 def test_progress_percent_label_updates(window):
     window.audio_files=["song.wav"];window.render_detail({"percent":50,"track_index":1,"track_total":1,"set_index":1,"set_total":1,"fps":74.2});assert window.song_progress.value()==50 and "50%" in window.progress_detail_label.text()
 
+def test_queue_completion_keeps_cancelled_job_message_accurate(window):
+    from mws_queue.queue_manager import QueueResult
+    window.queue_manager.sets=[JobSet("Cancelled",[{"audio":"a.wav"}],status="cancelled")]
+    window._queue_completion(QueueResult(1,0,0,0,0,0.0))
+    assert "남겨 두었습니다" in window.status.text()
+    assert len(window.queue_manager.sets)==1
+

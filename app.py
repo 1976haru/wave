@@ -36,13 +36,28 @@ def packaged_smoke(window,application):
     if os.environ.get("MWS_QUEUE_SMOKE")=="1":
         try:
             import wave
-            from mws_queue.queue_manager import QueueManager
-            smoke_root=Path(tempfile.gettempdir())/"mws_queue_smoke_v0823"; smoke_root.mkdir(parents=True,exist_ok=True)
+            from mws_queue.queue_manager import JobSet,QueueManager
+            smoke_root=Path(tempfile.gettempdir())/"mws_queue_smoke_v0851"; smoke_root.mkdir(parents=True,exist_ok=True)
             wav=smoke_root/"smoke.wav"
             with wave.open(str(wav),"wb") as handle:
                 handle.setnchannels(1); handle.setsampwidth(2); handle.setframerate(8000); handle.writeframes((np.zeros(8000,dtype=np.int16)).tobytes())
-            window.queue_manager.state_path=smoke_root/"queue_state.json"; window.queue_manager.sets=[]; window.audio_files=[str(wav)]; window.audio_list.clear(); window.audio_list.addItem(wav.name); window.set_output_dir(str(smoke_root/"wave")); window.navigate_step(3); window.queue_panel.add_button.click(); application.processEvents()
-            report.update({"queue_add_clicked":True,"queue_count":len(window.queue_manager.sets),"queue_card_visible":len(window.queue_manager.sets)==1,"queue_step":window.current_step,"queue_start_enabled":window.primary_action.isEnabled()})
+            window.queue_manager.state_path=smoke_root/"queue_state.json";window.queue_manager.sets=[];window.queue_manager.save();window.audio_files=[str(wav)];window.audio_list.clear();window.audio_list.addItem(wav.name);window.set_output_dir(str(smoke_root/"wave"));window.navigate_step(3);window.queue_panel.add_button.click();application.processEvents()
+            queue_add_ok=len(window.queue_manager.sets)==1 and window.queue_panel.cards.count()==1
+            result=window.queue_manager.run(lambda *_:{})
+            window._queue_completion(result);application.processEvents()
+            ui_completion_ok=not window.queue_manager.sets and window.queue_panel.cards.count()==0 and not window.queue_panel.start_button.isEnabled()
+            sequential_ok=ui_completion_ok
+            for _ in range(6):
+                window.queue_panel.add_button.click();application.processEvents()
+                if len(window.queue_manager.sets)!=1:sequential_ok=False;break
+                result=window.queue_manager.run(lambda *_:{})
+                window._queue_completion(result);application.processEvents()
+                sequential_ok=sequential_ok and not window.queue_manager.sets and window.queue_panel.cards.count()==0 and not window.queue_panel.start_button.isEnabled()
+            limit_manager=QueueManager(smoke_root/"queue_limit_state.json");limit_manager.sets=[]
+            for index in range(5):limit_manager.add(JobSet(f"limit-{index}",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")))
+            try:limit_manager.add(JobSet("limit-6",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")));limit_enforced=False
+            except ValueError:limit_enforced=len(limit_manager.sets)==5
+            report.update({"queue_add_clicked":queue_add_ok,"queue_count":len(window.queue_manager.sets),"queue_card_visible":queue_add_ok,"queue_step":window.current_step,"queue_start_enabled":window.queue_panel.start_button.isEnabled(),"queue_sequential_jobs":7,"queue_sequential_pass":sequential_ok,"queue_ui_completion_pass":ui_completion_ok,"queue_five_active_limit_pass":limit_enforced,"queue_completion_message":window.status.text()})
         except Exception as exc: report.update({"queue_add_clicked":False,"queue_error":repr(exc)})
     shot_value=os.environ.get("MWS_SCREENSHOT_DIR")
     if shot_value:
