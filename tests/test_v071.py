@@ -50,7 +50,7 @@ def test_queue_run_all_sets(tmp_path):
     manager=QueueManager(tmp_path/"queue.json")
     for index in range(3):manager.add(make_set(tmp_path,index))
     result=manager.run(lambda track,job: {"output":"done"})
-    assert result.success and result.sets_success==3 and all(item.status=="completed" for item in manager.sets)
+    assert result.success and result.sets_success==3 and result.sets_total==3 and not manager.sets
 
 def test_queue_continues_track_failure(tmp_path):
     manager=QueueManager(tmp_path/"queue.json");manager.add(JobSet("mixed",[{"audio":"ok"},{"audio":"bad"},{"audio":"ok2"}],output_dir=str(tmp_path)))
@@ -63,7 +63,7 @@ def test_queue_continues_track_failure(tmp_path):
 def test_queue_continues_next_set_after_failure(tmp_path):
     manager=QueueManager(tmp_path/"queue.json");manager.add(JobSet("bad",[{"audio":"bad"}],output_dir=str(tmp_path)));manager.add(JobSet("good",[{"audio":"good"}],output_dir=str(tmp_path)))
     result=manager.run(lambda track,job: (_ for _ in ()).throw(RuntimeError("fail")) if track["audio"]=="bad" else {})
-    assert result.sets_failed==1 and result.sets_success==1 and manager.sets[1].status=="completed"
+    assert result.sets_failed==1 and result.sets_success==1 and len(manager.sets)==1 and manager.sets[0].status=="failed"
 
 def test_queue_skip_completed(tmp_path):
     manager=QueueManager(tmp_path/"queue.json");item=make_set(tmp_path);item.status="completed";item.tracks[0]["status"]="completed";item.completed=1;manager.add(item);called=[];result=manager.run(lambda *args:called.append(1),skip_completed=True)

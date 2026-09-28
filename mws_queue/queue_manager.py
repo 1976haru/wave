@@ -37,6 +37,7 @@ class QueueResult:
     tracks_failed:int
     elapsed:float
     errors:list[str]=field(default_factory=list)
+    completed_removed:int=0
     @property
     def success(self):return self.sets_failed==0 and not self.errors
 class QueueManager:
@@ -44,6 +45,7 @@ class QueueManager:
     def __init__(self,state_path="queue_state.json"):
         self.state_path=Path(state_path);self.sets:list[JobSet]=[];self.running=False;self.cancel_requested=False;self.pause_requested=False;self.load()
     def add(self,job_set):
+        self.prune_completed(save=False)
         if len(self.sets)>=self.max_sets:raise ValueError("최대 5개의 예약 작업만 추가할 수 있습니다.")
         if isinstance(job_set,dict):job_set=JobSet.from_dict(job_set)
         self.sets.append(job_set);self.save();return job_set
@@ -58,14 +60,23 @@ class QueueManager:
     def move_up(self,index):return self.move(index,index-1) if index>0 else False
     def move_down(self,index):return self.move(index,index+1) if index<len(self.sets)-1 else False
     def clear(self):self.sets.clear();self.save()
+    def prune_completed(self,save=True):
+        before=len(self.sets)
+        self.sets=[item for item in self.sets if item.status!="completed"]
+        removed=before-len(self.sets)
+        if removed and save:self.save()
+        return removed
     def save(self):
         self.state_path.parent.mkdir(parents=True,exist_ok=True);payload={"version":1,"sets":[item.snapshot() for item in self.sets]};temp=self.state_path.with_suffix(".tmp");temp.write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8");temp.replace(self.state_path)
     def load(self):
         if not self.state_path.exists():return
         try:
             data=json.loads(self.state_path.read_text(encoding="utf-8-sig"));self.sets=[JobSet.from_dict(item) for item in data.get("sets",[])][:self.max_sets]
+            recovered=False
             for item in self.sets:
-                if item.status=="running":item.status="pending"
+                if item.status=="running":item.status="pending";recovered=True
+            removed=self.prune_completed(save=False)
+            if removed or recovered:self.save()
         except (OSError,json.JSONDecodeError,TypeError):self.sets=[]
     def preflight(self,check_template=None):
         results=[]
@@ -90,13 +101,13 @@ class QueueManager:
     def request_pause(self):self.pause_requested=True
     def resume(self):self.pause_requested=False
     def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None):
-        started=time.perf_counter();self.running=True;self.cancel_requested=False;errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
+        started=time.perf_counter();sets_total=len(self.sets);self.running=True;self.cancel_requested=False;errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
         if sleep_guard:sleep_guard.__enter__()
         try:
             for set_index,item in enumerate(self.sets):
                 if self.cancel_requested:break
                 if item.status=="completed" and skip_completed:continue
-                item.status="running";item.error="";self.save()
+                item.status="running";item.error="";item.completed=0;item.failed=0;self.save()
                 for track_index,track in enumerate(item.tracks):
                     if self.cancel_requested:break
                     if track.get("status")=="completed" and skip_completed:tracks_success+=1;item.completed+=1;continue
@@ -116,5 +127,6 @@ class QueueManager:
             self.running=False
             if sleep_guard:sleep_guard.__exit__(None,None,None)
             self.save()
-        return QueueResult(len(self.sets),sets_success,sets_failed,tracks_success,tracks_failed,time.perf_counter()-started,errors)
+        completed_removed=self.prune_completed(save=True)
+        return QueueResult(sets_total,sets_success,sets_failed,tracks_success,tracks_failed,time.perf_counter()-started,errors,completed_removed)
 
