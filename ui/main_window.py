@@ -470,13 +470,13 @@ class MainWindow(QMainWindow):
         self.status.setText("Ready")
     def task_failed(self,error):self.status.setText("Failed: "+error)
     def start_preview_worker(self,features):
-        self.stop_preview_worker();self.preview_mailbox=LatestFrameMailbox();self.preview_thread=QThread(self);self.preview_worker=PreviewRenderWorker(features,self.template,self.renderer_choice.currentText(),self.preview_mailbox);self.preview_worker.moveToThread(self.preview_thread);self.preview_thread.started.connect(self.preview_worker.start);self.preview_worker.frameReady.connect(self.preview_frame_ready);self.preview_worker.ready.connect(lambda name:setattr(self.preview_engine.metrics,"renderer",name));self.preview_worker.failed.connect(self.task_failed);self.preview_worker.stopped.connect(self.preview_thread.quit);self.preview_thread.start()
+        self.stop_preview_worker();template=self._template_with_local_background();self.preview_mailbox=LatestFrameMailbox();self.preview_thread=QThread(self);self.preview_worker=PreviewRenderWorker(features,template,self.renderer_choice.currentText(),self.preview_mailbox);self.preview_worker.moveToThread(self.preview_thread);self.preview_thread.started.connect(self.preview_worker.start);self.preview_worker.frameReady.connect(self.preview_frame_ready);self.preview_worker.ready.connect(lambda name:setattr(self.preview_engine.metrics,"renderer",name));self.preview_worker.failed.connect(self.task_failed);self.preview_worker.stopped.connect(self.preview_thread.quit);self.preview_thread.start()
     def stop_preview_worker(self):
         if self.preview_thread and self.preview_thread.isRunning() and self.preview_worker:
             QMetaObject.invokeMethod(self.preview_worker,"stop",Qt.BlockingQueuedConnection);self.preview_thread.quit();self.preview_thread.wait(3000)
         self.preview_thread=None;self.preview_worker=None;self.preview_mailbox=None
     def render_preview(self):
-        if self.preview_mailbox is not None:self.preview_mailbox.submit(self.current_time,self.template)
+        if self.preview_mailbox is not None:self.preview_mailbox.submit(self.current_time,self._template_with_local_background())
     def preview_frame_ready(self,image,seconds,metrics):
         if abs(seconds-self.current_time)>.25:return
         h,w=image.shape[:2];q=QImage(image.data,w,h,image.strides[0],QImage.Format_RGBA8888).copy();self.preview.setPixmap(QPixmap.fromImage(q).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation));timing=self.scheduler.metrics;self.preview_engine.metrics.fps=metrics["fps"];self.preview_engine.metrics.renderer=metrics["renderer"];self.performance.setText(f"Renderer: {metrics['renderer']} | Preview FPS: {metrics['fps']:.1f} | Replaced: {metrics['replaced']} | Dropped: {timing.dropped_frames} | Drift: {timing.max_drift*1000:.1f} ms | Cache: {'HIT' if self.preview_engine.metrics.cache_hit else 'MISS'}")
@@ -516,7 +516,15 @@ class MainWindow(QMainWindow):
         elif self.resolution.currentText()=="Custom":width,height=self.custom_width.value(),self.custom_height.value()
         else:width,height=map(int,self.resolution.currentText().split("x"))
         fmt=self.export_format.currentText(); overlay=self.canvas_mode.currentIndex()==0; codec="h264" if fmt=="mp4" and overlay else ("png" if fmt=="mov" and overlay else "auto"); include_audio=False if overlay else True; options=ExportOptions(width,height,int(self.export_fps.currentText()),self.quality.currentText(),self.renderer_choice.currentText(),fmt,self.ffmpeg_path.text() or None,"overlay" if overlay else "full",codec,include_audio,18 if fmt=="mp4" and overlay else None)
-        return {"audio_files":list(self.audio_files),"template":copy.deepcopy(self.template),"options":options,"output_dir":output,"skip_completed":self.skip_completed.isChecked()}
+        return {"audio_files":list(self.audio_files),"template":self._template_with_local_background(),"options":options,"output_dir":output,"skip_completed":self.skip_completed.isChecked()}
+
+    def _template_with_local_background(self):
+        """Attach a read-only reference source without persisting it in presets."""
+        template=copy.deepcopy(self.template);source=self.reference_video
+        if not source and self.reference_images:
+            row=self.ref_list.currentRow() if hasattr(self,"ref_list") else -1;source=self.reference_images[row if 0<=row<len(self.reference_images) else 0]
+        if source:template["_local_background_source"]=str(source)
+        return template
     def render(self):
         return self.render_now()
     def render_now(self):

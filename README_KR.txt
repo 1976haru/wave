@@ -1,8 +1,9 @@
 압축을 풀고 EXE를 실행하세요.
 
-Music Wave Studio v0.8.4.0 BETA
+Music Wave Studio v0.8.4.1 BETA
 
 Universal Soft Round LED: Theme 7종, Intensity, Width, Position, Custom Color, Auto Adapt
+Local Background Adapt: 선택한 레퍼런스의 파형 영역을 분석해 밝은 배경에서도 색과 도트를 선명하게 유지합니다.
 내 파형: AppData 저장, 안전한 .mwswave 가져오기/내보내기
 
 1. 음원 15곡이 들어 있는 폴더를 선택합니다.

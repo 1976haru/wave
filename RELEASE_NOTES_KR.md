@@ -1,4 +1,11 @@
-# Music Wave Studio v0.8.4.0 Beta
+# Music Wave Studio v0.8.4.1 Beta
+
+## Local Background Adapt
+
+- 전체 화면 평균이 아닌 실제 파형 lower-third ROI의 밝기, 대비, highlight, texture를 분석합니다.
+- 밝고 복잡한 배경에서는 theme 색에서 파생한 미세한 contrast halo와 강화된 core로 가독성을 높입니다.
+- 어두운 배경의 기존 glow 품질과 Soft Round LED geometry/motion은 유지합니다.
+- Preview와 production Render가 선택한 reference 이미지/영상에 동일한 adaptation 경로를 사용합니다.
 
 ## Universal Visualizer Production Integration
 

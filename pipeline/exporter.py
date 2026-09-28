@@ -9,6 +9,7 @@ from core.ffmpeg_progress import FFmpegProgressParser
 from animation.engine import AnimationEngine
 from render.renderer import RendererFactory
 from render.quality import PRESETS
+from visualizers.background_source import source_from_template
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
 @dataclass
 class ExportOptions:
@@ -50,7 +51,7 @@ def _hidden_process_kwargs():
     return {"stdin":subprocess.PIPE,"stderr":subprocess.PIPE,"creationflags":flags,"startupinfo":startup}
 
 def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print,progress_detail=None,start_frame=0,end_frame=None):
-    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer,render_template);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
+    options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer,render_template);background_source=source_from_template(render_template);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
     if not ffmpeg:raise RuntimeError("FFmpeg is required for video export")
     output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);full_total=max(1,math.ceil(duration*options.fps));start_frame=max(0,int(start_frame));end_frame=full_total-1 if end_frame is None else min(full_total-1,int(end_frame));total=max(1,end_frame-start_frame+1);segment_start=start_frame/options.fps;segment_duration=total/options.fps;started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(segment_duration);stderr_lines=[]
     logging.info("export start renderer=%s preset=%s input_count=1 profile=%sx%s/%sfps/%s/crf%s",options.renderer,template.get("id",template.get("name","unknown")),options.width,options.height,options.fps,options.format,options.crf)
@@ -64,7 +65,11 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
     try:
         for local_frame in range(total):
             if cancel and cancel():raise InterruptedError("Render cancelled")
-            mark=perf_counter();state=engine.sample((start_frame+local_frame)/options.fps);animation_seconds+=perf_counter()-mark;mark=perf_counter();frame=renderer.render_rgba(options.width,options.height,state,render_template);renderer_seconds+=perf_counter()-mark;mark=perf_counter();process.stdin.write(memoryview(frame));pipe_seconds+=perf_counter()-mark
+            mark=perf_counter();seconds=(start_frame+local_frame)/options.fps;state=engine.sample(seconds)
+            if background_source:
+                background=background_source.frame(seconds,options.width,options.height)
+                if background is not None:state["background_frame"]=background
+            animation_seconds+=perf_counter()-mark;mark=perf_counter();frame=renderer.render_rgba(options.width,options.height,state,render_template);renderer_seconds+=perf_counter()-mark;mark=perf_counter();process.stdin.write(memoryview(frame));pipe_seconds+=perf_counter()-mark
         process.stdin.close();mark=perf_counter();code=process.wait();encode_wait_seconds=perf_counter()-mark;reader.join(timeout=2)
         if code:raise RuntimeError(f"FFmpeg exited with code {code}: {" | ".join(stderr_lines[-5:])}")
         if progress_detail: progress_detail({"percent":100.0,"out_time":segment_start+segment_duration,"frame":start_frame+total,"fps":total/max(perf_counter()-started,1e-9),"done":True})
@@ -73,5 +78,6 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
         process.terminate();process.wait();reader.join(timeout=1)
         if output.exists():output.unlink()
         raise
+    if background_source:background_source.close()
     elapsed=perf_counter()-started;generation=animation_seconds+renderer_seconds;frame_generation_fps=total/max(generation,1e-9);average_fps=total/max(elapsed,1e-9);bottleneck="Encoder" if pipe_seconds+encode_wait_seconds>renderer_seconds else "Renderer";profile={"animation_seconds":animation_seconds,"renderer_seconds":renderer_seconds,"pipe_write_seconds":pipe_seconds,"encode_wait_seconds":encode_wait_seconds,"frame_generation_fps":frame_generation_fps,"average_fps":average_fps,"bottleneck":bottleneck}
     logging.info("export complete renderer=%s preset=%s frames=%s seconds=%.3f",renderer.name,template.get("id",template.get("name","unknown")),total,elapsed);logger(f"render renderer={renderer.name} frames={total} total={elapsed:.3f}s generation_fps={frame_generation_fps:.2f} output_fps={average_fps:.2f} bottleneck={bottleneck} cache={'hit' if hit else 'miss'}");return {"output":str(output),"renderer":renderer.name,"cache_hit":hit,"frames":total,"seconds":elapsed,**profile}

@@ -8,6 +8,7 @@ from core.ffmpeg_progress import FFmpegProgressParser
 from pipeline.exporter import ExportOptions, build_ffmpeg_command
 from render.quality import PRESETS
 from render.renderer import RendererFactory
+from visualizers.background_source import source_from_template
 
 def _hidden(ffmpeg):
     import os
@@ -43,7 +44,7 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
         for raw in iter(proc.stderr.readline,b""):
             line=raw.decode("utf-8","replace").strip(); stderr.append(line); ev=parser.feed(line)
             if ev and progress_detail: progress_detail(ev)
-    reader=threading.Thread(target=drain,daemon=True); reader.start(); engines=[AnimationEngine(e["features"],render_template) for e in entries]; renderer=RendererFactory.create(options.renderer,render_template); started=time.perf_counter()
+    reader=threading.Thread(target=drain,daemon=True); reader.start(); engines=[AnimationEngine(e["features"],render_template) for e in entries]; renderer=RendererFactory.create(options.renderer,render_template); background_source=source_from_template(render_template); started=time.perf_counter()
     try:
         current=0;last_state=None
         for frame_index in range(total_frames):
@@ -52,7 +53,10 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
                 current+=1
                 if last_state is not None:engines[current].prev=last_state["values"].copy()
             e=entries[current]; local=max(0,frame_index-e["start_frame"])/options.fps
-            state=engines[current].sample(local,absolute_seconds=frame_index/options.fps);last_state=state
+            absolute_seconds=frame_index/options.fps;state=engines[current].sample(local,absolute_seconds=absolute_seconds);last_state=state
+            if background_source:
+                background=background_source.frame(absolute_seconds,options.width,options.height)
+                if background is not None:state["background_frame"]=background
             frame=renderer.render_rgba(options.width,options.height,state,render_template)
             proc.stdin.write(memoryview(frame))
             if progress_detail:
@@ -64,5 +68,6 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
         proc.terminate(); proc.wait(); reader.join(timeout=1)
         if target.exists(): target.unlink()
         raise
+    if background_source:background_source.close()
     elapsed=time.perf_counter()-started
     return {"output":str(target),"timeline":str(timeline_path) if timeline_path else None,"tracks":len(entries),"duration":total_seconds,"frames":total_frames,"seconds":elapsed,"average_fps":total_frames/max(elapsed,1e-9),"renderer":renderer.name}

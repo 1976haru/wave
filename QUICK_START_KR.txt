@@ -1,6 +1,6 @@
 Music Wave Studio 빠른 시작
 
-1. MusicWaveStudio_v0.8.4.0.exe 실행
+1. MusicWaveStudio_v0.8.4.1.exe 실행
 2. 음원 폴더 선택
 
 Universal Visualizer: Soft Round LED에서 Theme / Intensity / Width / Position을 선택하고 Preview로 확인합니다.

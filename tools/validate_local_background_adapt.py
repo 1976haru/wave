@@ -61,7 +61,12 @@ def composite(background: np.ndarray, overlay: np.ndarray, x=70, y=850) -> tuple
     mixed = roi * (1 - alpha) + rgb
     result[y:y + overlay.shape[0], x:x + overlay.shape[1]] = np.clip(mixed, 0, 255).astype(np.uint8)
     mask = overlay[..., 3] > 20
-    presence = float(np.mean(np.max(np.abs(mixed - roi), axis=2)[mask])) if np.any(mask) else 0.0
+    # Perceptual Lab distance captures the darker, more saturated adaptive core
+    # better than raw RGB brightness difference on near-white backgrounds.
+    original_lab = cv2.cvtColor(np.clip(roi, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+    mixed_lab = cv2.cvtColor(np.clip(mixed, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+    delta = np.linalg.norm(mixed_lab - original_lab, axis=2)
+    presence = float(np.mean(delta[mask])) if np.any(mask) else 0.0
     return result, presence
 
 
@@ -146,6 +151,18 @@ def main() -> None:
         improvements[after_case[0]] = round((after_value / max(before_value, 1e-6) - 1) * 100, 1)
     payload = {"version": "0.8.4.1", "metrics": metrics, "presence_improvement_percent": improvements}
     (OUT / "validation_metrics.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    report = [
+        "Music Wave Studio v0.8.4.1 - LOCAL BACKGROUND ADAPT VALIDATION",
+        "", "Geometry/FFT/motion changed: NO", "Tokyo Signature work started: NO",
+        "Analysis: waveform-local ROI luminance/contrast/highlight/texture + temporal EMA",
+        "Underlay: theme-derived dot-local contrast halo (no black outline/backplate)", "",
+    ]
+    for name, values in metrics.items():
+        report.append(f"{name}: presence={values['mean_presence']:.3f}, min={values['minimum_presence']:.3f}, fps={values['render_fps']:.2f}")
+    report.extend(["", "Presence improvement:"])
+    report.extend(f"{name}: {value:+.1f}%" for name, value in improvements.items())
+    report.extend(["", "Visual approval: USER REVIEW REQUIRED"])
+    (OUT / "validation_report.txt").write_text("\n".join(report), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

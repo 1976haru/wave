@@ -4,6 +4,7 @@ from time import perf_counter
 from audio.analyzer import AnalysisSettings, analyze_file
 from animation.engine import AnimationEngine
 from render.renderer import RendererFactory
+from visualizers.background_source import source_from_template
 
 def format_time(seconds):
     value=max(0,int(seconds)); return f"{value//60:02d}:{value%60:02d}"
@@ -15,13 +16,16 @@ class PreviewMetrics:
 class PreviewEngine:
     """Low-resolution cached, frame-at-time preview; never writes a temporary video."""
     def __init__(self,width=960,height=540,fps=24,renderer="AUTO"):
-        self.width,self.height,self.fps=width,height,fps; self.renderer_choice=renderer; self.features=None; self.animation=None; self.renderer=None; self.template={}; self.last_time=-1.0; self.metrics=PreviewMetrics()
+        self.width,self.height,self.fps=width,height,fps; self.renderer_choice=renderer; self.features=None; self.animation=None; self.renderer=None; self.template={}; self.background_source=None; self.last_time=-1.0; self.metrics=PreviewMetrics()
     @property
     def duration(self): return float(self.features["duration"][0]) if self.features is not None else 0.0
     def load(self,audio_path,template,cache_dir="cache"):
-        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_dir); self.renderer=RendererFactory.create(self.renderer_choice,self.template); self.animation=AnimationEngine(self.features,self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
+        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_dir); self.renderer=RendererFactory.create(self.renderer_choice,self.template); self.animation=AnimationEngine(self.features,self.template); self.background_source=source_from_template(self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
     def update_template(self,template):
-        requested=int(template.get("bands",64)); current=int(self.features["spectrum"].shape[1]) if self.features is not None else requested; self.template=dict(template)
+        requested=int(template.get("bands",64)); current=int(self.features["spectrum"].shape[1]) if self.features is not None else requested; old_source=self.template.get("_local_background_source"); self.template=dict(template)
+        if old_source != self.template.get("_local_background_source") or self.background_source is None:
+            if self.background_source:self.background_source.close()
+            self.background_source=source_from_template(self.template)
         if self.features is not None:
             if requested!=current:
                 import numpy as np
@@ -35,5 +39,9 @@ class PreviewEngine:
         if self.animation is None: raise RuntimeError("Preview audio is not loaded")
         seconds=max(0,min(float(seconds),self.duration));
         if seconds<self.last_time: self.animation.reset()
-        started=perf_counter(); state=self.animation.sample(seconds); image=self.renderer.render_rgba(self.width,self.height,state,self.template); elapsed=perf_counter()-started; instant=1/max(elapsed,1e-6); self.metrics.fps=instant if not self.metrics.fps else self.metrics.fps*.8+instant*.2; self.last_time=seconds; return image
+        started=perf_counter(); state=self.animation.sample(seconds)
+        if self.background_source:
+            background=self.background_source.frame(seconds,self.width,self.height)
+            if background is not None:state["background_frame"]=background
+        image=self.renderer.render_rgba(self.width,self.height,state,self.template); elapsed=perf_counter()-started; instant=1/max(elapsed,1e-6); self.metrics.fps=instant if not self.metrics.fps else self.metrics.fps*.8+instant*.2; self.last_time=seconds; return image
 
