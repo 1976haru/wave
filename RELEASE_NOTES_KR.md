@@ -1,4 +1,12 @@
-# Music Wave Studio v0.8.4.1 Beta
+# Music Wave Studio v0.8.5.0
+
+## Tokyo Chill Signature V1
+
+- 그의 STORY: Tokyo Midnight Pulse
+- 그녀의 STORY: Tokyo Silk Wave
+- 그와 그녀의 STORY: Tokyo Two Hearts
+- 4단계 움직임, 70–130% 크기, 상/중/하 위치, 3단계 존재감
+- Universal Visualizer와 기존 Tokyo preset은 그대로 유지합니다.
 
 ## Local Background Adapt
 

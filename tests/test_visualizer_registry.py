@@ -5,7 +5,7 @@ from visualizers.families.soft_round_led import load_profiles, resolve_profile
 
 
 def test_registry_exposes_only_completed_family():
-    assert registry.ids() == ("soft_round_led",)
+    assert registry.ids() == ("soft_round_led", "tokyo_signature")
     family = registry.get("soft_round_led")
     assert family.display_name == "Soft Round LED"
     assert "theme" in family.supported_parameters

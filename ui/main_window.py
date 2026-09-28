@@ -112,14 +112,14 @@ class MainWindow(QMainWindow):
         for text,fn in (("Add Image",self.add_reference),("Remove",self.remove_reference),("Clear",self.clear_reference)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         r.addLayout(row);self.reference_analyze_button=QPushButton(self.translator.tr("reference_analyze"));self.reference_analyze_button.clicked.connect(self.analyze_reference_images);r.addWidget(self.reference_analyze_button);self.reference_cancel_button=QPushButton(self.translator.tr("reference_cancel"));self.reference_cancel_button.clicked.connect(self.cancel_reference_analysis);self.reference_cancel_button.hide();r.addWidget(self.reference_cancel_button);self.reference_status=QLabel(self.translator.tr("reference_status"));r.addWidget(self.reference_status);roirow=QHBoxLayout();b=QPushButton(self.translator.tr("roi_draw"));b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_coordinate"));b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_reset"));b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel(self.translator.tr("no_video"));r.addWidget(self.video_label);b=QPushButton(self.translator.tr("select_video"));b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton(self.translator.tr("analyze_motion"));b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
-        templates=QWidget();t=QVBoxLayout(templates);self.template_filter=QComboBox();self.template_filter.addItems(["CHILL RAP SIGNATURE","Signature Experimental / v3","Signature Experimental / v2","추천 스타일","전체 스타일","시니어","Tokyo Chill","Jazz/Chanson","Modern","Signature Classic · 그와 그녀","Signature Classic · 그의 이야기","Signature Classic · 그녀의 이야기"]);self.template_filter.currentTextChanged.connect(self.filter_templates);t.addWidget(self.template_filter);self.template_list=QListWidget();self.template_list.setViewMode(QListWidget.IconMode);self.template_list.setIconSize(QSize(180,72));self.template_list.setResizeMode(QListWidget.Adjust);self.template_list.setSpacing(8);self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);self.queue_panel.add_button.clicked.connect(self.add_to_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
+        templates=QWidget();t=QVBoxLayout(templates);self.template_filter=QComboBox();self.template_filter.addItems(["추천 스타일","Tokyo Chill Signature","CHILL RAP SIGNATURE","Signature Experimental / v3","Signature Experimental / v2","전체 스타일","시니어","Tokyo Chill","Jazz/Chanson","Modern","Signature Classic · 그와 그녀","Signature Classic · 그의 이야기","Signature Classic · 그녀의 이야기"]);self.template_filter.currentTextChanged.connect(self.filter_templates);t.addWidget(self.template_filter);self.template_list=QListWidget();self.template_list.setViewMode(QListWidget.IconMode);self.template_list.setIconSize(QSize(180,72));self.template_list.setResizeMode(QListWidget.Adjust);self.template_list.setSpacing(8);self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);self.queue_panel.add_button.clicked.connect(self.add_to_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
     def _center_panel(self):
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
         for text,fn in (("▶ Play",self.play),("Ⅱ Pause",self.pause),("■ Stop",self.stop)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         self.timeline=QSlider(Qt.Horizontal);self.timeline.setRange(0,0);self.timeline.sliderMoved.connect(self.seek);row.addWidget(self.timeline,1);self.time_label=QLabel("00:00 / 00:00");row.addWidget(self.time_label);v.addLayout(row);return box
     def _right_panel(self):
-        self.tabs=QTabWidget();self.tabs.setUsesScrollButtons(True);self.fields={};self.combos={};self.checks={};self.simple_controls=SimpleControls();self.simple_controls.changed.connect(self.simple_changed);self.tabs.addTab(self.simple_controls,"간편 설정");self.tabs.addTab(self._universal_visualizer_tab(),"Universal LED");
+        self.tabs=QTabWidget();self.tabs.setUsesScrollButtons(True);self.fields={};self.combos={};self.checks={};self.simple_controls=SimpleControls();self.simple_controls.changed.connect(self.simple_changed);self.tabs.addTab(self.simple_controls,"간편 설정");self.tabs.addTab(self._tokyo_signature_tab(),"Tokyo Chill Signature");self.tabs.addTab(self._universal_visualizer_tab(),"Universal LED");
         audio=("Bands",8,256,1),("Response",.1,3,.01),("Attack",0,1,.01),("Decay",0,1,.01),("Smoothing",0,.95,.01),("Onset Boost",0,2,.01),("Bass Weight",0,2,.01),("Mid Weight",0,2,.01),("High Weight",0,2,.01)
         design=("Width",.1,1,.01),("Height",.05,.9,.01),("Bar Width",.05,1,.01),("Gap",0,.95,.01),("Roundness",0,1,.01),("Opacity",0,1,.01)
         audio_widget=self._control_tab(audio,"audio");advanced=QFormLayout();self.analysis_mode=QComboBox();self.analysis_mode.addItems(["STANDARD","ADVANCED"]);self.fft_window=QComboBox();self.fft_window.addItems(["hann","hamming","blackman"]);self.spectrum_mapping=QComboBox();self.spectrum_mapping.addItems(["AUTO","LOG","PERCEPTUAL"]);audio_widget.layout().addRow("Analysis Mode",self.analysis_mode);audio_widget.layout().addRow("FFT Window",self.fft_window);audio_widget.layout().addRow("Spectrum Mapping",self.spectrum_mapping);self.tabs.addTab(audio_widget,"Audio");widget=self._control_tab(design,"design");form=widget.layout();self._combo(form,"Style",["bars","line","dot","ribbon","ring","radial","dot_matrix","twin_dot_matrix","dot_line_hybrid","echo_dots"],"renderer");self._combo(form,"Position",["top","center","bottom"],"position");self._check(form,"Mirror","mirror");self._color_button(form,"Main Color","color");self._check(form,"Gradient","gradient");self._color_button(form,"Gradient Start","gradient_start");self._color_button(form,"Gradient End","gradient_end");self.tabs.addTab(widget,"Design")
@@ -148,6 +148,15 @@ class MainWindow(QMainWindow):
         for text,callback in (("사용",self.use_my_waveform),("편집",self.use_my_waveform),("복제",self.duplicate_my_waveform),("이름변경",self.rename_my_waveform),("내보내기",self.export_my_waveform),("삭제",self.delete_my_waveform),("가져오기",self.import_my_waveform)):
             button=QPushButton(text);button.clicked.connect(callback);actions.addWidget(button)
         layout.addLayout(actions);QTimer.singleShot(0,self.refresh_my_waveforms);return widget
+    def _tokyo_signature_tab(self):
+        widget=QWidget();form=QFormLayout(widget);self.signature_controls={}
+        options=(("Signature",[("그와 그녀의 STORY · Tokyo Two Hearts","TWO_HEARTS"),("그의 STORY · Tokyo Midnight Pulse","MIDNIGHT_PULSE"),("그녀의 STORY · Tokyo Silk Wave","SILK_WAVE")]),("움직임 강도",[("잔잔하게","CALM"),("기본","STANDARD"),("역동적","DYNAMIC"),("매우 역동적","VERY_DYNAMIC")]),("위치",[("위","TOP"),("중앙","CENTER"),("아래","BOTTOM")]),("가로 위치",[("왼쪽","LEFT"),("중앙","CENTER"),("오른쪽","RIGHT")]),("파형 존재감",[("부드럽게","SOFT"),("기본","DEFAULT"),("선명하게","CRISP")]))
+        for label,items in options:
+            combo=QComboBox();[combo.addItem(text,value) for text,value in items];combo.currentIndexChanged.connect(self.signature_controls_changed);self.signature_controls[label]=combo;form.addRow(label,combo)
+        size=QSlider(Qt.Horizontal);size.setRange(70,130);size.setValue(100);size.valueChanged.connect(self.signature_controls_changed);self.signature_controls["파형 크기"]=size;form.addRow("파형 크기 70–130%",size)
+        local=QCheckBox();local.setChecked(True);local.toggled.connect(self.signature_controls_changed);self.signature_controls["Local Background Adapt"]=local;form.addRow("Local Background Adapt",local)
+        row=QHBoxLayout();preview=QPushButton("Preview");preview.clicked.connect(self.render_preview);reset=QPushButton("추천값으로 복원");reset.clicked.connect(self.reset_signature_defaults);save=QPushButton("내 파형으로 저장");save.clicked.connect(self.save_my_waveform);[row.addWidget(button) for button in (preview,reset,save)];form.addRow(row)
+        return widget
     def _control_tab(self,items,prefix):
         widget=QWidget();form=QFormLayout(widget)
         keys={"Bands":"bands","Response":"response","Attack":"attack","Decay":"decay","Smoothing":"smoothing","Onset Boost":"onset_boost","Bass Weight":"bass_weight","Mid Weight":"mid_weight","High Weight":"high_weight","Width":"width","Height":"height","Bar Width":"bar_width","Gap":"gap","Roundness":"roundness","Opacity":"opacity"}
@@ -339,14 +348,16 @@ class MainWindow(QMainWindow):
         self.template_entries=[]
         for path,data in list_templates(resource_path("templates"),"my_templates"):
             self.template_entries.append((path,data))
-        self.template_entries.sort(key=lambda entry:(0 if entry[1].get("signature_tier")=="FINAL" else 1,str(entry[0])))
+        signature_order={"TOKYO_TWO_HEARTS":0,"TOKYO_MIDNIGHT_PULSE":1,"TOKYO_SILK_WAVE":2}
+        self.template_entries.sort(key=lambda entry:(0 if entry[1].get("signature_tier")=="FINAL" else 1,signature_order.get(entry[1].get("id"),99),str(entry[0])))
         self.filter_templates(self.template_filter.currentText() if hasattr(self,"template_filter") else "\ucd94\ucc9c \uC2A4\ud0c0\uc77c")
     def filter_templates(self,mode="전체 스타일"):
         if not hasattr(self,"template_list"): return
         self.template_list.clear()
-        recommended={"01_clean_bars","10_warm_cream_line","18_tokyo_neon","28_paris_thin_line","31_blue_jazz","42_glass_spectrum","signature_dual_together","signature_his_midnight","signature_her_silk"}
+        recommended={"01_clean_bars","10_warm_cream_line","18_tokyo_neon","28_paris_thin_line","31_blue_jazz","42_glass_spectrum","signature_dual_together","signature_his_midnight","signature_her_silk","TOKYO_TWO_HEARTS","TOKYO_MIDNIGHT_PULSE","TOKYO_SILK_WAVE"}
         for path,data in getattr(self,"template_entries",[]):
             category=str(data.get("category","")).lower(); ident=str(data.get("id",path.stem))
+            if mode=="Tokyo Chill Signature" and category!="tokyo_chill_signature_v1": continue
             if mode=="CHILL RAP SIGNATURE" and (category!="chill_rap_signature" or not data.get("signature_category")): continue
             if mode=="Signature Experimental / v2" and category!="signature_experimental_v2": continue
             if mode=="Signature Experimental / v3" and category!="signature_experimental_v3": continue
@@ -366,10 +377,23 @@ class MainWindow(QMainWindow):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
         if ok and name.strip():self.template["name"]=name.strip();safe="".join(c if c.isalnum() or c in "-_" else "_" for c in name.strip());save_template(Path("my_templates")/(safe+".json"),self.template);self.refresh_templates();self.status.setText("Saved to My Templates")
     def _current_waveform_data(self,name="Current Waveform"):
+        if self.template.get("renderer_family")=="tokyo_signature":
+            settings=copy.deepcopy(self.template.get("tokyo_signature",{}));return new_waveform(name,renderer_family="tokyo_signature",theme="NEON",intensity="STANDARD",width="STANDARD",position=str(settings.get("horizontal_position","LEFT")).upper(),color_mode="THEME",colors=[],auto_adapt=bool(settings.get("auto_adapt",True)),local_adapt=bool(settings.get("local_adapt",True)),advanced={},signature=settings)
         settings=copy.deepcopy(self.template.get("universal_visualizer",{}));colors=[button.text() for button in self.uv_color_buttons]
         return new_waveform(name,renderer_family="soft_round_led",theme=str(settings.get("theme","NEON")).upper(),intensity=str(settings.get("intensity","STANDARD")).upper(),width=str(settings.get("width","STANDARD")).upper(),position=str(settings.get("position","LEFT")).upper(),color_mode=str(settings.get("color_mode","THEME")).upper(),colors=colors if str(settings.get("color_mode","THEME")).upper()=="CUSTOM" else [],auto_adapt=bool(settings.get("auto_adapt",True)),local_adapt=bool(settings.get("local_adapt",True)),advanced=copy.deepcopy(settings.get("advanced",{})))
     def _apply_waveform_data(self,data):
+        if data["renderer_family"]=="tokyo_signature":
+            variant=data["signature"]["variant"];files={"TWO_HEARTS":"00_v0850_tokyo_two_hearts.json","MIDNIGHT_PULSE":"00_v0850_tokyo_midnight_pulse.json","SILK_WAVE":"00_v0850_tokyo_silk_wave.json"};base=load_template(resource_path("templates")/files[variant]);base["name"]=data["name"];base["tokyo_signature"].update(copy.deepcopy(data["signature"]));self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2);return
         base=load_template(resource_path("templates/00_universal_soft_round_led.json"));base["name"]=data["name"];base["renderer_family"]=data["renderer_family"];base["universal_visualizer"]={key:copy.deepcopy(data[key]) for key in ("theme","intensity","width","position","color_mode","colors","auto_adapt","local_adapt","advanced")};self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2)
+    def signature_controls_changed(self,*_):
+        if self._syncing:return
+        variants={"TWO_HEARTS":"00_v0850_tokyo_two_hearts.json","MIDNIGHT_PULSE":"00_v0850_tokyo_midnight_pulse.json","SILK_WAVE":"00_v0850_tokyo_silk_wave.json"};variant=self.signature_controls["Signature"].currentData()
+        if self.template.get("renderer_family")!="tokyo_signature" or self.template.get("tokyo_signature",{}).get("variant")!=variant:self.template=load_template(resource_path("templates")/variants[variant])
+        settings=self.template.setdefault("tokyo_signature",{});settings.update({"variant":variant,"motion":self.signature_controls["움직임 강도"].currentData(),"size":self.signature_controls["파형 크기"].value()/100,"vertical_position":self.signature_controls["위치"].currentData(),"horizontal_position":self.signature_controls["가로 위치"].currentData(),"presence":self.signature_controls["파형 존재감"].currentData(),"local_adapt":self.signature_controls["Local Background Adapt"].isChecked()});self.debounce.start()
+    def reset_signature_defaults(self):
+        from visualizers.families.tokyo_signature import RECOMMENDED
+        if self.template.get("renderer_family")!="tokyo_signature":return
+        settings=self.template["tokyo_signature"];settings.update(copy.deepcopy(RECOMMENDED[settings["variant"]]));self.sync_controls();self.debounce.start()
     def universal_controls_changed(self,*_):
         if self._syncing:return
         if self.template.get("renderer_family")!="soft_round_led":self.template=load_template(resource_path("templates/00_universal_soft_round_led.json"))
@@ -437,6 +461,12 @@ class MainWindow(QMainWindow):
             for index,button in enumerate(self.uv_color_buttons):value=colors[min(index,len(colors)-1)] if colors else "#FFFFFF";button.setText(value);button.setStyleSheet(f"background:{value};color:#111")
             advanced=settings.get("advanced",{})
             for key,control in self.uv_advanced.items():control.setValue(advanced.get(key,control.minimum()))
+        if hasattr(self,"signature_controls") and self.template.get("renderer_family")=="tokyo_signature":
+            settings=self.template.get("tokyo_signature",{});mapping={"Signature":"variant","움직임 강도":"motion","위치":"vertical_position","가로 위치":"horizontal_position","파형 존재감":"presence"}
+            for label,key in mapping.items():
+                value=str(settings.get(key,""));index=self.signature_controls[label].findData(value)
+                if index>=0:self.signature_controls[label].setCurrentIndex(index)
+            self.signature_controls["파형 크기"].setValue(round(float(settings.get("size",1))*100));self.signature_controls["Local Background Adapt"].setChecked(bool(settings.get("local_adapt",True)))
         self._syncing=False
     def controls_changed(self,*_):
         if self._syncing:return

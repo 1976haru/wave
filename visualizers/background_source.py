@@ -75,8 +75,8 @@ class LocalBackgroundSource:
 
 
 def source_from_template(template: dict) -> LocalBackgroundSource | None:
-    universal = template.get("universal_visualizer", {})
-    if not universal.get("local_adapt", True):
+    settings = template.get("universal_visualizer", template.get("tokyo_signature", {}))
+    if not settings.get("local_adapt", True):
         return None
     source = LocalBackgroundSource(template.get("_local_background_source"), template.get("_local_background_rect", DEFAULT_OVERLAY_RECT))
     return source if source.available else None
