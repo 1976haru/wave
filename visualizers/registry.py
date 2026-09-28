@@ -29,7 +29,9 @@ registry = VisualizerRegistry()
 
 def _register_builtins():
     from .families.soft_round_led import SoftRoundLEDRenderer, SUPPORTED_PARAMETERS
+    from .families.tokyo_signature import TokyoSignatureRenderer, SUPPORTED_PARAMETERS as TOKYO_PARAMETERS
     registry.register(RendererFamily("soft_round_led", "Soft Round LED", SoftRoundLEDRenderer, SUPPORTED_PARAMETERS))
+    registry.register(RendererFamily("tokyo_signature", "Tokyo Chill Signature", TokyoSignatureRenderer, TOKYO_PARAMETERS))
 
 
 _register_builtins()

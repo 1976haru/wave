@@ -1,0 +1,22 @@
+{
+  "version": "0.8.5.0-dev",
+  "id": "TOKYO_TWO_HEARTS",
+  "name": "Tokyo Two Hearts",
+  "name_ko": "그와 그녀의 STORY\nTokyo Two Hearts",
+  "name_en": "Tokyo Two Hearts",
+  "category": "tokyo_chill_signature_v1",
+  "signature_tier": "DEV",
+  "recommended": true,
+  "renderer_family": "tokyo_signature",
+  "renderer": "tokyo_signature",
+  "signature_variant": "TWO_HEARTS",
+  "bands": 64,
+  "attack": 0.14,
+  "decay": 0.80,
+  "smoothing": 0.22,
+  "bass_weight": 1.10,
+  "mid_weight": 1.12,
+  "high_weight": 0.90,
+  "canvas_profile": {"width": 960, "height": 160, "fps": 24, "background": "#000000"},
+  "tokyo_signature": {"variant":"TWO_HEARTS","motion":"DYNAMIC","size":1.0,"vertical_position":"BOTTOM","horizontal_position":"LEFT","presence":"CRISP","auto_adapt":true,"local_adapt":true,"colors":[]}
+}

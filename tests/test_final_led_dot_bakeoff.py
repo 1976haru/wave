@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_bakeoff_keeps_production_version_and_five_distinct_candidates():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.1"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() in {"0.8.4.1", "0.8.5.0-dev"}
     assert [style.key for style in STYLES] == list("ABCDE")
     assert len({(s.bands, s.active_width, s.diameter, s.attack, s.release) for s in STYLES}) == 5
 

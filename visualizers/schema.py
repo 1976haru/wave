@@ -10,6 +10,10 @@ INTENSITIES = {"CALM", "STANDARD", "DYNAMIC"}
 WIDTHS = {"COMPACT", "STANDARD", "WIDE"}
 POSITIONS = {"LEFT", "CENTER", "RIGHT"}
 COLOR_MODES = {"THEME", "CUSTOM"}
+SIGNATURE_VARIANTS = {"MIDNIGHT_PULSE", "SILK_WAVE", "TWO_HEARTS"}
+SIGNATURE_MOTIONS = {"CALM", "STANDARD", "DYNAMIC", "VERY_DYNAMIC"}
+SIGNATURE_VERTICAL = {"TOP", "CENTER", "BOTTOM"}
+SIGNATURE_PRESENCE = {"SOFT", "DEFAULT", "CRISP"}
 ADVANCED_FIELDS = {
     "bands": (8, 128), "dot_diameter": (2.0, 10.0), "horizontal_gap": (2.0, 30.0),
     "vertical_gap": (2.0, 16.0), "amplitude_gain": (.25, 2.0), "attack": (.02, .95),
@@ -69,13 +73,20 @@ def validate_waveform(data: dict, installed_families: set[str] | None = None) ->
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not low <= float(value) <= high:
             raise WaveformValidationError(f"Advanced value out of range: {key}")
         clean_advanced[key] = int(value) if key in {"bands", "temporal_smoothing"} else float(value)
-    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced"}
+    signature = data.get("signature", {})
+    if family == "tokyo_signature":
+        if not isinstance(signature, dict): raise WaveformValidationError("Signature settings must be a JSON object.")
+        variant=str(signature.get("variant","MIDNIGHT_PULSE")).upper();motion=str(signature.get("motion","DYNAMIC")).upper();vertical=str(signature.get("vertical_position","BOTTOM")).upper();presence=str(signature.get("presence","CRISP")).upper();size=float(signature.get("size",1.0))
+        if variant not in SIGNATURE_VARIANTS or motion not in SIGNATURE_MOTIONS or vertical not in SIGNATURE_VERTICAL or presence not in SIGNATURE_PRESENCE or not .7<=size<=1.3:raise WaveformValidationError("Unsupported Tokyo Signature option.")
+        signature={"variant":variant,"motion":motion,"size":size,"vertical_position":vertical,"horizontal_position":position,"presence":presence,"auto_adapt":bool(signature.get("auto_adapt",True)),"local_adapt":bool(signature.get("local_adapt",True)),"colors":[str(c).upper() for c in signature.get("colors",[]) if HEX.match(str(c))]}
+    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced", "signature"}
     warnings += [f"Ignored field: {key}" for key in data if key not in known]
     clean = {"format": FORMAT, "format_version": FORMAT_VERSION, "name": name,
              "description": str(data.get("description", ""))[:500], "renderer_family": family,
              "theme": theme, "intensity": intensity, "width": width, "position": position,
              "color_mode": color_mode, "colors": [str(c).upper() for c in colors] if color_mode == "CUSTOM" else [],
              "auto_adapt": bool(data.get("auto_adapt", True)), "local_adapt": bool(data.get("local_adapt", True)), "advanced": clean_advanced}
+    if family == "tokyo_signature": clean["signature"] = signature
     return clean, warnings
 
 
@@ -85,4 +96,4 @@ def new_waveform(name: str, **values) -> dict:
             "width": "STANDARD", "position": "LEFT", "color_mode": "THEME", "colors": [],
             "auto_adapt": True, "local_adapt": True, "advanced": {}}
     data.update(deepcopy(values))
-    return validate_waveform(data, {"soft_round_led"})[0]
+    return validate_waveform(data, {"soft_round_led", "tokyo_signature"})[0]

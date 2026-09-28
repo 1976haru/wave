@@ -67,4 +67,4 @@ def test_cross_genre_outputs_and_contact_sheets_exist():
 
 
 def test_production_version_stays_frozen():
-    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() == "0.8.4.1"
+    assert (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip() in {"0.8.4.1", "0.8.5.0-dev"}

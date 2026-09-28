@@ -1,0 +1,22 @@
+{
+  "version": "0.8.5.0-dev",
+  "id": "TOKYO_MIDNIGHT_PULSE",
+  "name": "Tokyo Midnight Pulse",
+  "name_ko": "그의 STORY\nTokyo Midnight Pulse",
+  "name_en": "Tokyo Midnight Pulse",
+  "category": "tokyo_chill_signature_v1",
+  "signature_tier": "DEV",
+  "recommended": true,
+  "renderer_family": "tokyo_signature",
+  "renderer": "tokyo_signature",
+  "signature_variant": "MIDNIGHT_PULSE",
+  "bands": 64,
+  "attack": 0.10,
+  "decay": 0.72,
+  "smoothing": 0.16,
+  "bass_weight": 1.30,
+  "mid_weight": 1.05,
+  "high_weight": 0.72,
+  "canvas_profile": {"width": 960, "height": 160, "fps": 24, "background": "#000000"},
+  "tokyo_signature": {"variant":"MIDNIGHT_PULSE","motion":"DYNAMIC","size":1.0,"vertical_position":"BOTTOM","horizontal_position":"LEFT","presence":"CRISP","auto_adapt":true,"local_adapt":true,"colors":[]}
+}
