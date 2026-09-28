@@ -16,7 +16,7 @@ PRESENCE = {"SOFT": (.78, .72), "DEFAULT": (.90, .88), "CRISP": (1.0, 1.0)}
 VERTICAL = {"TOP": .62, "CENTER": .75, "BOTTOM": .87}
 RECOMMENDED = {
     "MIDNIGHT_PULSE": {"motion": "DYNAMIC", "size": 1.0, "vertical_position": "BOTTOM", "presence": "CRISP"},
-    "SILK_WAVE": {"motion": "STANDARD", "size": 1.0, "vertical_position": "BOTTOM", "presence": "DEFAULT"},
+    "SILK_WAVE": {"motion": "DYNAMIC", "size": 1.0, "vertical_position": "BOTTOM", "presence": "CRISP"},
     "TWO_HEARTS": {"motion": "DYNAMIC", "size": 1.0, "vertical_position": "BOTTOM", "presence": "CRISP"},
 }
 

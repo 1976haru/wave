@@ -1,8 +1,8 @@
 압축을 풀고 EXE를 실행하세요.
 
-Music Wave Studio v0.8.5.0-dev
+Music Wave Studio v0.8.5.0
 
-Tokyo Chill Signature V1 개발 후보: Tokyo Two Hearts / Tokyo Midnight Pulse / Tokyo Silk Wave
+Tokyo Chill Signature: Tokyo Two Hearts / Tokyo Midnight Pulse / Tokyo Silk Wave
 
 Universal Soft Round LED: Theme 7종, Intensity, Width, Position, Custom Color, Auto Adapt
 Local Background Adapt: 선택한 레퍼런스의 파형 영역을 분석해 밝은 배경에서도 색과 도트를 선명하게 유지합니다.

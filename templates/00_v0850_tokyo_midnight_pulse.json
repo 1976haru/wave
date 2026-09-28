@@ -1,11 +1,11 @@
 {
-  "version": "0.8.5.0-dev",
+  "version": "0.8.5.0",
   "id": "TOKYO_MIDNIGHT_PULSE",
   "name": "Tokyo Midnight Pulse",
   "name_ko": "그의 STORY\nTokyo Midnight Pulse",
   "name_en": "Tokyo Midnight Pulse",
   "category": "tokyo_chill_signature_v1",
-  "signature_tier": "DEV",
+  "signature_tier": "FINAL",
   "recommended": true,
   "renderer_family": "tokyo_signature",
   "renderer": "tokyo_signature",

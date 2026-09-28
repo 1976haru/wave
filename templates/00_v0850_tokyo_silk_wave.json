@@ -1,11 +1,11 @@
 {
-  "version": "0.8.5.0-dev",
+  "version": "0.8.5.0",
   "id": "TOKYO_SILK_WAVE",
   "name": "Tokyo Silk Wave",
   "name_ko": "그녀의 STORY\nTokyo Silk Wave",
   "name_en": "Tokyo Silk Wave",
   "category": "tokyo_chill_signature_v1",
-  "signature_tier": "DEV",
+  "signature_tier": "FINAL",
   "recommended": true,
   "renderer_family": "tokyo_signature",
   "renderer": "tokyo_signature",
@@ -18,5 +18,5 @@
   "mid_weight": 1.28,
   "high_weight": 0.96,
   "canvas_profile": {"width": 960, "height": 160, "fps": 24, "background": "#000000"},
-  "tokyo_signature": {"variant":"SILK_WAVE","motion":"STANDARD","size":1.0,"vertical_position":"BOTTOM","horizontal_position":"LEFT","presence":"DEFAULT","auto_adapt":true,"local_adapt":true,"colors":[]}
+  "tokyo_signature": {"variant":"SILK_WAVE","motion":"DYNAMIC","size":1.0,"vertical_position":"BOTTOM","horizontal_position":"LEFT","presence":"CRISP","auto_adapt":true,"local_adapt":true,"colors":[]}
 }

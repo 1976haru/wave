@@ -1,6 +1,6 @@
-# Music Wave Studio v0.8.5.0-dev
+# Music Wave Studio v0.8.5.0
 
-## Tokyo Chill Signature V1 (사용자 시각 검토 필요)
+## Tokyo Chill Signature V1
 
 - 그의 STORY: Tokyo Midnight Pulse
 - 그녀의 STORY: Tokyo Silk Wave

@@ -348,7 +348,8 @@ class MainWindow(QMainWindow):
         self.template_entries=[]
         for path,data in list_templates(resource_path("templates"),"my_templates"):
             self.template_entries.append((path,data))
-        self.template_entries.sort(key=lambda entry:(0 if entry[1].get("signature_tier")=="FINAL" else 1,str(entry[0])))
+        signature_order={"TOKYO_TWO_HEARTS":0,"TOKYO_MIDNIGHT_PULSE":1,"TOKYO_SILK_WAVE":2}
+        self.template_entries.sort(key=lambda entry:(0 if entry[1].get("signature_tier")=="FINAL" else 1,signature_order.get(entry[1].get("id"),99),str(entry[0])))
         self.filter_templates(self.template_filter.currentText() if hasattr(self,"template_filter") else "\ucd94\ucc9c \uC2A4\ud0c0\uc77c")
     def filter_templates(self,mode="전체 스타일"):
         if not hasattr(self,"template_list"): return
