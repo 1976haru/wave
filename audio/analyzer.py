@@ -1,6 +1,6 @@
 """Versioned, cached audio analysis for render-time sampling."""
 from __future__ import annotations
-import hashlib,json,shutil,subprocess
+import hashlib,json,shutil,subprocess,zipfile
 from dataclasses import asdict,dataclass
 from datetime import datetime,timezone
 from pathlib import Path
@@ -54,28 +54,52 @@ def _smooth(values,use_scipy):
         try:return _signal.sosfiltfilt(sos,values).astype(np.float32)
         except ValueError:return _signal.sosfilt(sos,values).astype(np.float32)
     return np.convolve(values,np.ones(3,np.float32)/3.0,mode="same").astype(np.float32)
-def analyze_pcm(x,sr,fps=30,bands=64,fft_size=4096,fft_window="hann",spectrum_mapping="AUTO",analyzer_backend="AUTO",min_frequency=40.0,max_frequency=18000.0):
-    samples=np.asarray(x,dtype=np.float32).reshape(-1);raw_samples=samples.copy();peak=float(np.max(np.abs(samples))) if samples.size else 0.0
-    if peak>1e-8:samples=samples/peak
+ANALYSIS_CHUNK_FRAMES=384
+def _frame_block(raw,scale,first,stop,hop,fft_size):
+    """Frames [first,stop) of the zero-padded, peak-normalized signal without materializing the whole song."""
+    half=fft_size//2;begin=first*hop-half;end=(stop-1)*hop-half+fft_size;segment=np.zeros(end-begin,np.float32);low=max(begin,0);high=min(end,len(raw))
+    if high>low:segment[low-begin:high-begin]=raw[low:high]/scale if scale is not None else raw[low:high]
+    return np.lib.stride_tricks.sliding_window_view(segment,fft_size)[::hop]
+def _raw_stats(raw,hop):
+    """Source loudness stats from un-normalized PCM, computed in hop-sized row chunks."""
+    if len(raw)<hop:return np.asarray([np.sqrt(np.mean(np.square(raw))+1e-12)]),float(np.sqrt(np.mean(np.square(raw))+1e-12))
+    rows=len(raw)//hop;frame_rms=np.empty(rows,np.float32);energy=0.0;step=max(1,(1<<20)//hop)
+    for first in range(0,rows,step):
+        block=raw[first*hop:min(rows,first+step)*hop].reshape(-1,hop);frame_rms[first:first+len(block)]=np.sqrt(np.mean(np.square(block),axis=1)+1e-12)
+    for first in range(0,len(raw),1<<20):energy+=float(np.dot(raw[first:first+(1<<20)].astype(np.float64),raw[first:first+(1<<20)].astype(np.float64)))
+    return frame_rms,float(np.sqrt(np.float32(energy/len(raw))+np.float32(1e-12)))
+def analyze_pcm(x,sr,fps=30,bands=64,fft_size=4096,fft_window="hann",spectrum_mapping="AUTO",analyzer_backend="AUTO",min_frequency=40.0,max_frequency=18000.0,chunk_frames=ANALYSIS_CHUNK_FRAMES):
+    # Chunked STFT: only chunk_frames x fft_size frames/magnitudes exist at a
+    # time, so peak memory no longer scales with song length.  Per-frame math
+    # is identical to the former whole-song matrix version.
+    raw=np.asarray(x,dtype=np.float32).reshape(-1);peak=float(max(raw.max(),-raw.min())) if raw.size else 0.0;scale=peak if peak>1e-8 else None
     use_scipy=analyzer_backend.upper()!="NUMPY" and _signal is not None;resolved="SCIPY" if use_scipy else "NUMPY"
-    hop=max(1,int(round(sr/fps)));count=max(1,int(np.ceil(len(samples)/hop)));padded=np.pad(samples,(fft_size//2,fft_size+hop));starts=np.arange(count)*hop
-    frames=np.stack([padded[s:s+fft_size] for s in starts]);rms=np.sqrt(np.mean(frames*frames,axis=1)+1e-12)
-    magnitude=np.abs(np.fft.rfft(frames*_window(fft_window,fft_size),axis=1)).astype(np.float32);frequencies=np.fft.rfftfreq(fft_size,1.0/sr)
+    hop=max(1,int(round(sr/fps)));count=max(1,int(np.ceil(len(raw)/hop)));window=_window(fft_window,fft_size);frequencies=np.fft.rfftfreq(fft_size,1.0/sr)
     high_limit=max(21.0,min(float(sr/2-1),float(max_frequency)));low_limit=max(1.0,min(float(min_frequency),high_limit*.5));edges=_edges(low_limit,high_limit,bands,spectrum_mapping);spectrum=np.zeros((count,bands),np.float32)
-    for band in range(bands):
-        mask=(frequencies>=edges[band])&(frequencies<edges[band+1])
-        if mask.any():spectrum[:,band]=np.sqrt(np.mean(magnitude[:,mask]**2,axis=1)+1e-12)
-    defs={"sub":(20,60),"bass_detail":(60,250),"low_mid":(250,500),"mid_detail":(500,2000),"upper_mid":(2000,4000),"high_detail":(4000,8000),"air":(8000,16000)};detailed={}
+    band_masks=[(frequencies>=edges[band])&(frequencies<edges[band+1]) for band in range(bands)]
+    defs={"sub":(20,60),"bass_detail":(60,250),"low_mid":(250,500),"mid_detail":(500,2000),"upper_mid":(2000,4000),"high_detail":(4000,8000),"air":(8000,16000)};detail_masks={}
     for name,(low,high) in defs.items():
-        upper=min(high,high_limit);mask=(frequencies>=low)&(frequencies<upper);detailed[name]=magnitude[:,mask].mean(axis=1) if mask.any() and upper>low else np.zeros(count,np.float32)
-    flux=np.maximum(np.diff(magnitude,axis=0,prepend=magnitude[:1]),0).mean(axis=1);onset=np.maximum(flux-_smooth(flux,use_scipy)*.45,0)
+        upper=min(high,high_limit);mask=(frequencies>=low)&(frequencies<upper);detail_masks[name]=mask if mask.any() and upper>low else None
+    detailed={name:np.zeros(count,np.float32) for name in defs};rms=np.empty(count,np.float32);flux=np.empty(count,np.float32);previous=None;chunk=max(2,int(chunk_frames));first=0
+    # Single-row FFT calls take a different SIMD path (last-bit float32 drift),
+    # so a trailing one-frame remainder is folded into the previous chunk.
+    while first<count:
+        stop=min(count,first+chunk);stop=count if count-stop==1 else stop;frames=_frame_block(raw,scale,first,stop,hop,fft_size)
+        rms[first:stop]=np.sqrt(np.mean(frames*frames,axis=1)+1e-12)
+        magnitude=np.abs(np.fft.rfft(frames*window,axis=1)).astype(np.float32);del frames
+        for band,mask in enumerate(band_masks):
+            if mask.any():spectrum[first:stop,band]=np.sqrt(np.mean(magnitude[:,mask]**2,axis=1)+1e-12)
+        for name,mask in detail_masks.items():
+            if mask is not None:detailed[name][first:stop]=magnitude[:,mask].mean(axis=1)
+        flux[first:stop]=np.maximum(np.diff(magnitude,axis=0,prepend=(magnitude[:1] if previous is None else previous)),0).mean(axis=1);previous=magnitude[-1:].copy();del magnitude;first=stop
+    onset=np.maximum(flux-_smooth(flux,use_scipy)*.45,0)
     spectrum=np.log1p(spectrum);spectrum=np.clip(spectrum/max(float(np.percentile(spectrum,99)),1e-8),0,1).astype(np.float32)
     result={name:_scaled(_smooth(value,use_scipy)) for name,value in detailed.items()}
-    raw_frame_rms=np.sqrt(np.mean(np.square(raw_samples[:len(raw_samples)//hop*hop].reshape(-1,hop)),axis=1)+1e-12) if len(raw_samples)>=hop else np.asarray([np.sqrt(np.mean(np.square(raw_samples))+1e-12)])
-    raw_db=20*np.log10(np.maximum(raw_frame_rms,1e-7));integrated=float(np.sqrt(np.mean(np.square(raw_samples))+1e-12));raw_peak=float(np.max(np.abs(raw_samples))) if raw_samples.size else 0.0
+    raw_frame_rms,integrated=_raw_stats(raw,hop)
+    raw_db=20*np.log10(np.maximum(raw_frame_rms,1e-7));raw_peak=peak
     deltas=np.diff(raw_frame_rms,prepend=raw_frame_rms[:1]);delta_median=float(np.median(deltas));transient_threshold=delta_median+2.5*float(np.median(np.abs(deltas-delta_median)))
     source_stats={"source_integrated_dbfs":20*np.log10(max(integrated,1e-7)),"source_p20_dbfs":np.percentile(raw_db,20),"source_median_dbfs":np.percentile(raw_db,50),"source_p95_dbfs":np.percentile(raw_db,95),"source_crest_factor":raw_peak/max(integrated,1e-7),"source_dynamic_range_db":np.percentile(raw_db,95)-np.percentile(raw_db,20),"source_silence_ratio":np.mean(raw_db<-48),"source_transient_density":np.mean(deltas>max(transient_threshold,.001))}
-    result.update({"spectrum":spectrum,"rms":_scaled(_smooth(rms,use_scipy)),"bass":_scaled(.35*detailed["sub"]+.65*detailed["bass_detail"]),"mid":_scaled(.2*detailed["low_mid"]+.55*detailed["mid_detail"]+.25*detailed["upper_mid"]),"high":_scaled(.7*detailed["high_detail"]+.3*detailed["air"]),"onset":_scaled(onset),"sr":np.array([sr]),"fps":np.array([fps]),"bands":np.array([bands]),"duration":np.array([len(samples)/float(sr)]),"analysis_backend":np.array([resolved]),**{key:np.asarray([value],np.float32) for key,value in source_stats.items()}})
+    result.update({"spectrum":spectrum,"rms":_scaled(_smooth(rms,use_scipy)),"bass":_scaled(.35*detailed["sub"]+.65*detailed["bass_detail"]),"mid":_scaled(.2*detailed["low_mid"]+.55*detailed["mid_detail"]+.25*detailed["upper_mid"]),"high":_scaled(.7*detailed["high_detail"]+.3*detailed["air"]),"onset":_scaled(onset),"sr":np.array([sr]),"fps":np.array([fps]),"bands":np.array([bands]),"duration":np.array([len(raw)/float(sr)]),"analysis_backend":np.array([resolved]),**{key:np.asarray([value],np.float32) for key,value in source_stats.items()}})
     return result
 def cache_key(path,settings):
     payload={"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)};digest=hashlib.sha256(json.dumps(payload,sort_keys=True).encode())
@@ -86,18 +110,34 @@ def save_cache(path,features):
     target=Path(path);target.parent.mkdir(parents=True,exist_ok=True);np.savez_compressed(target,**features)
 def load_cache(path):
     with np.load(path,allow_pickle=False) as archive:return {key:archive[key] for key in archive.files}
+def _cache_entry(path,settings,cache_dir=None):
+    key=cache_key(path,settings);target=Path(cache_dir or runtime_cache_dir())/f"{key}.npz";return key,target,target.with_suffix(".json"),{"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)}
+def _cache_valid(target,meta_path,expected):
+    if not (target.exists() and meta_path.exists()):return None
+    try:
+        metadata=json.loads(meta_path.read_text(encoding="utf-8"))
+        return metadata if metadata.get("analysis_version")==ANALYSIS_VERSION and metadata.get("settings")==expected["settings"] else None
+    except (OSError,json.JSONDecodeError,ValueError):return None
 def analyze_file(path,settings=None,cache_dir=None,logger:Callable[[str],None]|None=None):
-    settings=settings or AnalysisSettings();started=perf_counter();key=cache_key(path,settings);target=Path(cache_dir or runtime_cache_dir())/f"{key}.npz";meta_path=target.with_suffix(".json");expected={"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)}
-    if target.exists() and meta_path.exists():
+    settings=settings or AnalysisSettings();started=perf_counter();key,target,meta_path,expected=_cache_entry(path,settings,cache_dir)
+    if _cache_valid(target,meta_path,expected) is not None:
         try:
-            metadata=json.loads(meta_path.read_text(encoding="utf-8"))
-            if metadata.get("analysis_version")==ANALYSIS_VERSION and metadata.get("settings")==expected["settings"]:
-                result=load_cache(target)
-                if logger:logger(f"analysis cache hit key={key[:12]} time={perf_counter()-started:.3f}s")
-                return result,True
-        except (OSError,json.JSONDecodeError,ValueError):pass
-    pcm,sr=decode_audio(path);result=analyze_pcm(pcm,sr,settings.fps,settings.bands,settings.fft_size,settings.fft_window,settings.spectrum_mapping,settings.analyzer_backend,settings.min_frequency,settings.max_frequency);save_cache(target,result)
-    metadata={**expected,"source_hash":key,"sample_rate":sr,"analysis_fps":settings.fps,"bands":settings.bands,"fft_window":settings.fft_window,"spectrum_mapping":settings.spectrum_mapping,"analyzer_backend":str(result["analysis_backend"][0]),"created_timestamp":datetime.now(timezone.utc).isoformat()}
+            result=load_cache(target)
+            if logger:logger(f"analysis cache hit key={key[:12]} time={perf_counter()-started:.3f}s")
+            return result,True
+        except (OSError,ValueError,KeyError,EOFError,zipfile.BadZipFile):pass
+    pcm,sr=decode_audio(path);result=analyze_pcm(pcm,sr,settings.fps,settings.bands,settings.fft_size,settings.fft_window,settings.spectrum_mapping,settings.analyzer_backend,settings.min_frequency,settings.max_frequency);del pcm;save_cache(target,result)
+    metadata={**expected,"source_hash":key,"sample_rate":sr,"analysis_fps":settings.fps,"bands":settings.bands,"fft_window":settings.fft_window,"spectrum_mapping":settings.spectrum_mapping,"analyzer_backend":str(result["analysis_backend"][0]),"duration":float(result["duration"][0]),"created_timestamp":datetime.now(timezone.utc).isoformat()}
     meta_path.write_text(json.dumps(metadata,indent=2,ensure_ascii=False),encoding="utf-8")
     if logger:logger(f"analysis cache miss key={key[:12]} time={perf_counter()-started:.3f}s")
     return result,False
+def analysis_duration(path,settings=None,cache_dir=None,logger:Callable[[str],None]|None=None)->tuple[float,bool]:
+    """Exact analysed duration without keeping features: cached metadata/NPZ key, else analyse once into the cache."""
+    settings=settings or AnalysisSettings();_key,target,meta_path,expected=_cache_entry(path,settings,cache_dir);metadata=_cache_valid(target,meta_path,expected)
+    if metadata is not None:
+        if isinstance(metadata.get("duration"),(int,float)):return float(metadata["duration"]),True
+        try:
+            with np.load(target,allow_pickle=False) as archive:return float(archive["duration"][0]),True
+        except (OSError,ValueError,KeyError,EOFError,zipfile.BadZipFile):pass
+    features,hit=analyze_file(path,settings,cache_dir,logger);duration=float(features["duration"][0]);del features
+    return duration,hit

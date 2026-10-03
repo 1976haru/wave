@@ -33,6 +33,12 @@ class PreviewEngine:
                 source=self.features["spectrum"]; old=np.linspace(0,1,current); new=np.linspace(0,1,requested); self.features=dict(self.features); self.features["spectrum"]=np.stack([np.interp(new,old,row) for row in source]).astype(np.float32); self.features["bands"]=np.array([requested])
             self.animation=AnimationEngine(self.features,self.template); self.last_time=-1
         return requested!=current
+    def release(self):
+        """Drop renderer (GL context), background capture and analysis references."""
+        from render.renderer import release_renderer
+        release_renderer(self.renderer)
+        if self.background_source:self.background_source.close()
+        self.renderer=None;self.background_source=None;self.animation=None;self.features=None
     def seek(self,seconds):
         self.last_time=float(seconds);
         if self.animation is not None:self.animation.reset()

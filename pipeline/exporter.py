@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging,math,shutil,subprocess,os,threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -7,7 +8,7 @@ from audio.analyzer import AnalysisSettings,analyze_file
 from core.ffmpeg import resolve_ffmpeg
 from core.ffmpeg_progress import FFmpegProgressParser
 from animation.engine import AnimationEngine
-from render.renderer import RendererFactory
+from render.renderer import RendererFactory,release_renderer
 from render.quality import PRESETS
 from visualizers.background_source import source_from_template
 RESOLUTIONS={"1920x1080":(1920,1080),"1080x1920":(1080,1920),"1080x1080":(1080,1080)}
@@ -50,18 +51,36 @@ def _hidden_process_kwargs():
     startup=subprocess.STARTUPINFO(); startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW; startup.wShowWindow=0
     return {"stdin":subprocess.PIPE,"stderr":subprocess.PIPE,"creationflags":flags,"startupinfo":startup}
 
+def release_process(proc, reader):
+    """Close stdin, end FFmpeg (terminate if still running) and join the stderr reader."""
+    if proc is None: return
+    try:
+        if proc.stdin and not proc.stdin.closed: proc.stdin.close()
+    except OSError: pass
+    if proc.poll() is None:
+        proc.terminate()
+        try: proc.wait(timeout=10)
+        except subprocess.TimeoutExpired: proc.kill(); proc.wait()
+    if reader is not None: reader.join(timeout=2)
+    if proc.stderr and (reader is None or not reader.is_alive()):
+        try: proc.stderr.close()
+        except OSError: pass
+
 def render_audio(audio_path,output_path,template,options=None,progress=None,cancel=None,logger=print,progress_detail=None,start_frame=0,end_frame=None):
     options=options or ExportOptions();preset=PRESETS[options.quality];render_template=dict(template,_quality=options.quality,_glow_scale=preset["glow_scale"],_blur_scale=preset["blur_scale"]);features,hit=analyze_file(audio_path,AnalysisSettings(fps=options.fps,bands=int(template.get("bands",64))),logger=logger);engine=AnimationEngine(features,render_template);renderer=RendererFactory.create(options.renderer,render_template);background_source=source_from_template(render_template);ffmpeg=resolve_ffmpeg(options.ffmpeg_path)
-    if not ffmpeg:raise RuntimeError("FFmpeg is required for video export")
-    output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);full_total=max(1,math.ceil(duration*options.fps));start_frame=max(0,int(start_frame));end_frame=full_total-1 if end_frame is None else min(full_total-1,int(end_frame));total=max(1,end_frame-start_frame+1);segment_start=start_frame/options.fps;segment_duration=total/options.fps;started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(segment_duration);stderr_lines=[]
+    if not ffmpeg:
+        release_renderer(renderer);background_source and background_source.close();raise RuntimeError("FFmpeg is required for video export")
+    output=Path(output_path);output.parent.mkdir(parents=True,exist_ok=True);duration=max(float(features["duration"][0]),1e-6);full_total=max(1,math.ceil(duration*options.fps));start_frame=max(0,int(start_frame));end_frame=full_total-1 if end_frame is None else min(full_total-1,int(end_frame));total=max(1,end_frame-start_frame+1);segment_start=start_frame/options.fps;segment_duration=total/options.fps;started=perf_counter();animation_seconds=renderer_seconds=pipe_seconds=0.0;parser=FFmpegProgressParser(segment_duration);stderr_lines=deque(maxlen=200)
     logging.info("export start renderer=%s preset=%s input_count=1 profile=%sx%s/%sfps/%s/crf%s",options.renderer,template.get("id",template.get("name","unknown")),options.width,options.height,options.fps,options.format,options.crf)
-    process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path,segment_start,segment_duration),**_hidden_process_kwargs())
+    try:process=subprocess.Popen(build_ffmpeg_command(ffmpeg,output,options,audio_path,segment_start,segment_duration),**_hidden_process_kwargs())
+    except BaseException:
+        release_renderer(renderer);background_source and background_source.close();raise
     def read_progress():
         for raw in iter(process.stderr.readline,b""):
             line=raw.decode("utf-8","replace").strip(); stderr_lines.append(line)
             event=parser.feed(line)
             if event and progress_detail: progress_detail(event)
-    reader=threading.Thread(target=read_progress,daemon=True);reader.start()
+    reader=threading.Thread(target=read_progress,daemon=True,name="mws-export-ffmpeg-stderr");reader.start();succeeded=False
     try:
         for local_frame in range(total):
             if cancel and cancel():raise InterruptedError("Render cancelled")
@@ -71,13 +90,16 @@ def render_audio(audio_path,output_path,template,options=None,progress=None,canc
                 if background is not None:state["background_frame"]=background
             animation_seconds+=perf_counter()-mark;mark=perf_counter();frame=renderer.render_rgba(options.width,options.height,state,render_template);renderer_seconds+=perf_counter()-mark;mark=perf_counter();process.stdin.write(memoryview(frame));pipe_seconds+=perf_counter()-mark
         process.stdin.close();mark=perf_counter();code=process.wait();encode_wait_seconds=perf_counter()-mark;reader.join(timeout=2)
-        if code:raise RuntimeError(f"FFmpeg exited with code {code}: {" | ".join(stderr_lines[-5:])}")
+        if code:raise RuntimeError(f"FFmpeg exited with code {code}: {" | ".join(list(stderr_lines)[-5:])}")
         if progress_detail: progress_detail({"percent":100.0,"out_time":segment_start+segment_duration,"frame":start_frame+total,"fps":total/max(perf_counter()-started,1e-9),"done":True})
-    except BaseException:
-        if process.stdin and not process.stdin.closed:process.stdin.close()
-        process.terminate();process.wait();reader.join(timeout=1)
-        if output.exists():output.unlink()
-        raise
-    if background_source:background_source.close()
+        succeeded=True
+    finally:
+        # Same cleanup for success, failure and cancel.
+        release_process(process,reader)
+        if background_source:background_source.close()
+        renderer_name=renderer.name;release_renderer(renderer);engine=features=state=frame=renderer=background_source=None
+        if not succeeded and output.exists():
+            try:output.unlink()
+            except OSError:logging.exception("export partial output cleanup failed path=%s",output)
     elapsed=perf_counter()-started;generation=animation_seconds+renderer_seconds;frame_generation_fps=total/max(generation,1e-9);average_fps=total/max(elapsed,1e-9);bottleneck="Encoder" if pipe_seconds+encode_wait_seconds>renderer_seconds else "Renderer";profile={"animation_seconds":animation_seconds,"renderer_seconds":renderer_seconds,"pipe_write_seconds":pipe_seconds,"encode_wait_seconds":encode_wait_seconds,"frame_generation_fps":frame_generation_fps,"average_fps":average_fps,"bottleneck":bottleneck}
-    logging.info("export complete renderer=%s preset=%s frames=%s seconds=%.3f",renderer.name,template.get("id",template.get("name","unknown")),total,elapsed);logger(f"render renderer={renderer.name} frames={total} total={elapsed:.3f}s generation_fps={frame_generation_fps:.2f} output_fps={average_fps:.2f} bottleneck={bottleneck} cache={'hit' if hit else 'miss'}");return {"output":str(output),"renderer":renderer.name,"cache_hit":hit,"frames":total,"seconds":elapsed,**profile}
+    logging.info("export complete renderer=%s preset=%s frames=%s seconds=%.3f",renderer_name,template.get("id",template.get("name","unknown")),total,elapsed);logger(f"render renderer={renderer_name} frames={total} total={elapsed:.3f}s generation_fps={frame_generation_fps:.2f} output_fps={average_fps:.2f} bottleneck={bottleneck} cache={'hit' if hit else 'miss'}");return {"output":str(output),"renderer":renderer_name,"cache_hit":hit,"frames":total,"seconds":elapsed,**profile}

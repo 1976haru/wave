@@ -1,4 +1,8 @@
 import argparse,json,logging,os,sys,tempfile,threading
+# numpy and scipy each ship an OpenBLAS pool whose worker threads commit ~32MB
+# buffers on Windows (~1.5GB Private on 24 cores). Nothing here needs BLAS
+# parallelism, so cap native pools before numpy is first imported.
+for _name in ("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS"):os.environ.setdefault(_name,"1")
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from core.version import get_version,build_info
@@ -83,6 +87,30 @@ def packaged_smoke(window,application):
             QTimer.singleShot(50,poll_reference);return
         except Exception as exc:report.update({"reference_status":"failed","reference_error":repr(exc)})
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8");QTimer.singleShot(50,application.quit)
+def queue_plan_driver(window,application,plan_path):
+    """Test hook (MWS_TEST_QUEUE_PLAN): drive the real UI flow folder -> analyze -> add SETs -> start queue -> idle -> close."""
+    from PySide6.QtCore import QTimer
+    from template_system import load_template
+    from core.memory_telemetry import checkpoint
+    plan=json.loads(Path(plan_path).read_text(encoding="utf-8"));report={"status":"running","sets_added":0};report_path=Path(plan.get("report",Path(plan_path).with_suffix(".report.json")))
+    extensions={".wav",".mp3",".flac",".m4a",".aac",".ogg",".opus"}
+    def files_of(folder,limit):return sorted((str(p) for p in Path(folder).iterdir() if p.is_file() and p.suffix.lower() in extensions),key=lambda value:Path(value).name.casefold())[:limit]
+    def write(**extra):report.update(extra);report_path.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8")
+    def when_idle(callback):
+        if window.thread is None and not window.queue_manager.running:callback()
+        else:QTimer.singleShot(500,lambda:when_idle(callback))
+    def add_sets():
+        for item in plan["sets"]:
+            window.template=load_template(item["template"]);window.sync_controls();window.audio_files=files_of(item["folder"],int(item.get("limit",15)));window.audio_list.clear();window.audio_list.addItems([Path(p).name for p in window.audio_files]);Path(item["output"]).mkdir(parents=True,exist_ok=True);window.set_output_dir(item["output"])
+            if window.add_to_queue():report["sets_added"]+=1
+        write();checkpoint("test_queue_start",sets=report["sets_added"]);window.start_queue();QTimer.singleShot(1000,lambda:when_idle(finished))
+    def finished():
+        write(status="queue_done",queue_remaining=len(window.queue_manager.sets),statuses=[item.status for item in window.queue_manager.sets]);checkpoint("test_queue_idle_begin")
+        QTimer.singleShot(int(plan.get("idle_ms",30000)),lambda:(checkpoint("test_queue_idle_end"),write(status="closing"),window.close()))
+    def begin():
+        first=plan["sets"][0];window.template=load_template(first["template"]);window.sync_controls();window.audio_files=files_of(first["folder"],int(first.get("limit",15)));window.audio_list.addItems([Path(p).name for p in window.audio_files]);Path(first["output"]).mkdir(parents=True,exist_ok=True);window.set_output_dir(first["output"]);window.analyze_audio()
+        QTimer.singleShot(500,lambda:when_idle(add_sets))
+    write(status="waiting");QTimer.singleShot(int(plan.get("start_delay_ms",0)),begin)
 def _configure_logging():
     root=logs_dir();root.mkdir(parents=True,exist_ok=True)
     handler=RotatingFileHandler(root/"music_wave_studio.log",maxBytes=5*1024*1024,backupCount=3,encoding="utf-8")
@@ -137,6 +165,9 @@ def main(argv=None):
 
 
     if os.environ.get("MWS_SMOKE_TEST")=="1":QTimer.singleShot(0,lambda:packaged_smoke(window,app))
+    from core.memory_telemetry import checkpoint as memory_checkpoint
+    QTimer.singleShot(1500,lambda:memory_checkpoint("app_ready",safe_mode=safe_mode))
+    if os.environ.get("MWS_TEST_QUEUE_PLAN"):QTimer.singleShot(2000,lambda:queue_plan_driver(window,app,os.environ["MWS_TEST_QUEUE_PLAN"]))
     auto_close=os.environ.get("MWS_AUTO_CLOSE_MS")
     if auto_close:QTimer.singleShot(max(1,int(auto_close)),window.close)
     return app.exec()

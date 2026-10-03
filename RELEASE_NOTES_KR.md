@@ -1,3 +1,13 @@
+# Music Wave Studio v0.8.5.4
+
+## v0.8.5.4 Real-world memory stability
+
+- 긴 SET(15곡 x 여러 세트) 렌더 중 메모리 사용량 대폭 감소 (long SET memory usage reduced)
+- 오디오 FFT 분석을 곡 전체가 아닌 구간(chunk) 단위로 처리 — 분석 결과는 동일 (chunked audio FFT analysis)
+- SET 렌더 시 현재 곡 1개의 분석 데이터만 메모리에 유지 (one-track-at-a-time SET feature loading)
+- GPU 렌더러 컨텍스트 해제, FFmpeg/배경/렌더러 정리 경로 통일 (renderer/resource cleanup improvements)
+- 숫자 계산 라이브러리(OpenBLAS) 유휴 스레드/메모리 예약 제거, 메모리 기록(MEMORY 로그)과 메모리 부족 경고 추가 (real-world batch stability improvements)
+
 # Music Wave Studio v0.8.5.3
 
 ## v0.8.5.3 Stability hardening
