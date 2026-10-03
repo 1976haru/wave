@@ -1,8 +1,10 @@
-import argparse,json,logging,os,sys,tempfile
+import argparse,json,logging,os,sys,tempfile,threading
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from core.version import get_version,build_info
+from core.runtime_paths import instance_lock_path,logs_dir,running_marker_path,state_dir
 def parse_args(argv=None):
-    parser=argparse.ArgumentParser(add_help=True);parser.add_argument("--headless",action="store_true");parser.add_argument("--job");parser.add_argument("--audio");parser.add_argument("--preset",default="01_clean_bars");parser.add_argument("--output");parser.add_argument("--format",default="webm",choices=["mp4","webm","mov"]);return parser.parse_args(argv)
+    parser=argparse.ArgumentParser(add_help=True);parser.add_argument("--headless",action="store_true");parser.add_argument("--safe-mode",action="store_true");parser.add_argument("--job");parser.add_argument("--audio");parser.add_argument("--preset",default="01_clean_bars");parser.add_argument("--output");parser.add_argument("--format",default="webm",choices=["mp4","webm","mov"]);return parser.parse_args(argv)
 def _headless(args):
     from render_job import run_job
     if args.job:return run_job(args.job)
@@ -82,29 +84,61 @@ def packaged_smoke(window,application):
         except Exception as exc:report.update({"reference_status":"failed","reference_error":repr(exc)})
     target.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding="utf-8");QTimer.singleShot(50,application.quit)
 def _configure_logging():
-    root=Path(os.environ.get("LOCALAPPDATA",Path.home()))/"MusicWaveStudio"/"logs"
-    root.mkdir(parents=True,exist_ok=True)
-    logging.basicConfig(filename=str(root/"music_wave_studio.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
+    root=logs_dir();root.mkdir(parents=True,exist_ok=True)
+    handler=RotatingFileHandler(root/"music_wave_studio.log",maxBytes=5*1024*1024,backupCount=3,encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"));logging.basicConfig(level=logging.INFO,handlers=[handler],force=True)
     logging.info("Music Wave Studio version=%s os=%s executable=%s",get_version(),sys.platform,sys.executable)
     def log_unhandled(kind,value,traceback):logging.critical("unhandled exception",exc_info=(kind,value,traceback));sys.__excepthook__(kind,value,traceback)
     sys.excepthook=log_unhandled
+    def log_thread(args):logging.critical("thread exception name=%s",args.thread.name if args.thread else "unknown",exc_info=(args.exc_type,args.exc_value,args.exc_traceback))
+    threading.excepthook=log_thread
+
+def _install_qt_logging():
+    from PySide6.QtCore import qInstallMessageHandler
+    def handler(mode,context,message):
+        name=getattr(mode,"name",str(mode));level=logging.CRITICAL if "Fatal" in name else logging.WARNING if "Warning" in name or "Critical" in name else logging.DEBUG
+        logging.log(level,"QT type=%s file=%s line=%s message=%s",name,getattr(context,"file",None),getattr(context,"line",None),message)
+    qInstallMessageHandler(handler)
 
 def main(argv=None):
     _configure_logging()
     args=parse_args(argv)
     if args.headless:
         result=_headless(args);print(json.dumps(result,ensure_ascii=False));return 0 if not result["failed"] else 2
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QLockFile,QTimer
+    from PySide6.QtWidgets import QApplication,QMessageBox
     from PySide6.QtGui import QFont, QFontDatabase
-    from ui.main_window import MainWindow
     app=QApplication(sys.argv[:1]); app.setApplicationName(f"Music Wave Studio v{get_version()}"); app.setOrganizationName("MusicWaveStudio")
+    _install_qt_logging();state_dir().mkdir(parents=True,exist_ok=True)
+    instance_lock=QLockFile(str(instance_lock_path()));instance_lock.setStaleLockTime(0)
+    if not instance_lock.tryLock(100):
+        logging.info("INSTANCE second launch rejected")
+        if os.environ.get("MWS_TEST_NONINTERACTIVE")!="1":QMessageBox.information(None,"Music Wave Studio","Music Wave Studio가 이미 실행 중입니다.")
+        return 0
+    marker=running_marker_path();previous_crash=marker.exists()
+    safe_mode=args.safe_mode
+    if previous_crash and not safe_mode:
+        safe_mode=QMessageBox.question(None,"Music Wave Studio 복구","이전 실행이 비정상 종료되었습니다.\n안전 모드로 시작하시겠습니까?",QMessageBox.Yes|QMessageBox.No)==QMessageBox.Yes
+    try:marker.write_text(f"pid={os.getpid()}\nversion={get_version()}\n",encoding="utf-8")
+    except OSError:logging.exception("CRASH marker create failed path=%s",marker)
+    def normal_shutdown():
+        try:marker.unlink(missing_ok=True)
+        except OSError:logging.exception("CRASH marker cleanup failed path=%s",marker)
+        instance_lock.unlock()
+    app.aboutToQuit.connect(normal_shutdown)
     families=set(QFontDatabase.families()); chosen=next((name for name in ("Malgun Gothic","Noto Sans CJK KR","Segoe UI") if name in families), None); chosen and app.setFont(QFont(chosen,10))
-    window=MainWindow();window.show()
+    try:
+        from ui.main_window import MainWindow
+        window=MainWindow(safe_mode=safe_mode);window.show();logging.info("STARTUP phase=show_window ok safe_mode=%s",safe_mode)
+    except Exception:
+        logging.exception("STARTUP MainWindow construction failed")
+        QMessageBox.critical(None,"Music Wave Studio","프로그램 시작 중 오류가 발생했습니다.\n로그 위치: "+str(logs_dir()/"music_wave_studio.log"))
+        normal_shutdown();return 1
 
 
     if os.environ.get("MWS_SMOKE_TEST")=="1":QTimer.singleShot(0,lambda:packaged_smoke(window,app))
+    auto_close=os.environ.get("MWS_AUTO_CLOSE_MS")
+    if auto_close:QTimer.singleShot(max(1,int(auto_close)),window.close)
     return app.exec()
 if __name__=="__main__":raise SystemExit(main())
 

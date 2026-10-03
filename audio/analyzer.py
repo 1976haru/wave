@@ -7,6 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable
 import numpy as np
+from core.runtime_paths import cache_dir as runtime_cache_dir
 ANALYSIS_VERSION="3"
 try:
     from scipy import signal as _signal
@@ -85,8 +86,8 @@ def save_cache(path,features):
     target=Path(path);target.parent.mkdir(parents=True,exist_ok=True);np.savez_compressed(target,**features)
 def load_cache(path):
     with np.load(path,allow_pickle=False) as archive:return {key:archive[key] for key in archive.files}
-def analyze_file(path,settings=None,cache_dir="cache",logger:Callable[[str],None]|None=None):
-    settings=settings or AnalysisSettings();started=perf_counter();key=cache_key(path,settings);target=Path(cache_dir)/f"{key}.npz";meta_path=target.with_suffix(".json");expected={"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)}
+def analyze_file(path,settings=None,cache_dir=None,logger:Callable[[str],None]|None=None):
+    settings=settings or AnalysisSettings();started=perf_counter();key=cache_key(path,settings);target=Path(cache_dir or runtime_cache_dir())/f"{key}.npz";meta_path=target.with_suffix(".json");expected={"analysis_version":ANALYSIS_VERSION,"settings":asdict(settings)}
     if target.exists() and meta_path.exists():
         try:
             metadata=json.loads(meta_path.read_text(encoding="utf-8"))

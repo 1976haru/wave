@@ -1,7 +1,9 @@
 from __future__ import annotations
-import copy,json,shutil,time,uuid
+import copy,json,logging,os,shutil,sys,time,uuid
+from datetime import datetime
 from dataclasses import asdict,dataclass,field
 from pathlib import Path
+from core.runtime_paths import queue_state_path
 from pipeline.segment_resume import recover_manifest
 @dataclass
 class JobSet:
@@ -27,7 +29,21 @@ class JobSet:
         seconds=sum(float(t.get("duration",0) or 0) for t in self.tracks);hours,rem=divmod(int(seconds),3600);minutes,_=divmod(rem,60)
         return f"{hours}시간 {minutes}분" if hours else f"{minutes}분"
     @classmethod
-    def from_dict(cls,data):return cls(**{k:v for k,v in data.items() if k in cls.__dataclass_fields__})
+    def from_dict(cls,data):
+        if not isinstance(data,dict):raise TypeError("queue set must be an object")
+        values={k:v for k,v in data.items() if k in cls.__dataclass_fields__}
+        if not isinstance(values.get("name"),str) or not values["name"].strip():raise ValueError("queue set name is invalid")
+        tracks=values.get("tracks")
+        if not isinstance(tracks,list) or any(not isinstance(track,dict) for track in tracks):raise ValueError("queue tracks are invalid")
+        status=values.get("status","pending")
+        if status not in {"pending","running","completed","failed","cancelled"}:raise ValueError("queue status is invalid")
+        if not isinstance(values.get("export",{}),dict):raise ValueError("queue export is invalid")
+        for key in ("output_dir","preset","id","error"):
+            if key in values and values[key] is None:values.pop(key)
+        for key in ("completed","failed"):
+            if key in values:
+                values[key]=max(0,int(values[key]))
+        return cls(**values)
 @dataclass
 class QueueResult:
     sets_total:int
@@ -42,8 +58,45 @@ class QueueResult:
     def success(self):return self.sets_failed==0 and not self.errors
 class QueueManager:
     max_sets=5
-    def __init__(self,state_path="queue_state.json"):
-        self.state_path=Path(state_path);self.sets:list[JobSet]=[];self.running=False;self.cancel_requested=False;self.pause_requested=False;self.load()
+    def __init__(self,state_path=None,load_state=True,migrate=True):
+        self.state_path=Path(state_path) if state_path is not None else queue_state_path();self.sets:list[JobSet]=[];self.running=False;self.cancel_requested=False;self.pause_requested=False;self.load_warning=None
+        if load_state:
+            if migrate and state_path is None:self._migrate_legacy_state()
+            self.load()
+
+    def _legacy_candidates(self):
+        executable_dir=Path(sys.executable).resolve().parent
+        candidates=[Path.cwd()/"queue_state.json",executable_dir/"queue_state.json",executable_dir.parent/"queue_state.json"]
+        unique=[]
+        for candidate in candidates:
+            if candidate.resolve()!=self.state_path.resolve() and candidate not in unique:unique.append(candidate)
+        return unique
+
+    def _migrate_legacy_state(self):
+        if self.state_path.exists():return
+        for source in self._legacy_candidates():
+            if not source.is_file():continue
+            try:
+                raw=json.loads(source.read_text(encoding="utf-8-sig"));sets=self._decode_sets(raw)
+                self.sets=sets
+                if not self.save():raise OSError("could not write migrated queue state")
+                stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup=source.with_name(f"queue_state_migrated_backup_{stamp}.json")
+                shutil.copy2(source,backup)
+                logging.info("QUEUE migration source=%s target=%s backup=%s sets=%d",source,self.state_path,backup,len(sets))
+                return
+            except Exception:
+                logging.exception("QUEUE legacy migration failed source=%s",source)
+
+    def _decode_sets(self,data):
+        if not isinstance(data,dict) or not isinstance(data.get("sets",[]),list):raise TypeError("queue state root is invalid")
+        result=[]
+        for raw in data.get("sets",[]):
+            item=JobSet.from_dict(raw)
+            if item.status=="completed":continue
+            if item.status=="running":item.status="pending"
+            result.append(item)
+        return result[:self.max_sets]
     def add(self,job_set):
         self.prune_completed(save=False)
         if len(self.sets)>=self.max_sets:raise ValueError("최대 5개의 예약 작업만 추가할 수 있습니다.")
@@ -67,17 +120,29 @@ class QueueManager:
         if removed and save:self.save()
         return removed
     def save(self):
-        self.state_path.parent.mkdir(parents=True,exist_ok=True);payload={"version":1,"sets":[item.snapshot() for item in self.sets]};temp=self.state_path.with_suffix(".tmp");temp.write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8");temp.replace(self.state_path)
+        temp=self.state_path.with_name(self.state_path.name+".tmp")
+        try:
+            self.state_path.parent.mkdir(parents=True,exist_ok=True);payload={"version":1,"sets":[item.snapshot() for item in self.sets]}
+            with open(temp,"w",encoding="utf-8",newline="\n") as handle:
+                json.dump(payload,handle,indent=2,ensure_ascii=False);handle.flush();os.fsync(handle.fileno())
+            os.replace(temp,self.state_path)
+            return True
+        except (OSError,TypeError,ValueError):
+            logging.exception("QUEUE state save failed path=%s",self.state_path)
+            try:temp.unlink(missing_ok=True)
+            except OSError:pass
+            return False
     def load(self):
         if not self.state_path.exists():return
         try:
-            data=json.loads(self.state_path.read_text(encoding="utf-8-sig"));self.sets=[JobSet.from_dict(item) for item in data.get("sets",[])][:self.max_sets]
-            recovered=False
-            for item in self.sets:
-                if item.status=="running":item.status="pending";recovered=True
-            removed=self.prune_completed(save=False)
-            if removed or recovered:self.save()
-        except (OSError,json.JSONDecodeError,TypeError):self.sets=[]
+            data=json.loads(self.state_path.read_text(encoding="utf-8-sig"));loaded=data.get("sets",[]) if isinstance(data,dict) else None
+            self.sets=self._decode_sets(data)
+            if len(self.sets)!=len(loaded) or any(isinstance(raw,dict) and raw.get("status")=="running" for raw in loaded):self.save()
+        except (OSError,UnicodeDecodeError,json.JSONDecodeError,TypeError,ValueError,KeyError):
+            logging.exception("QUEUE corrupt state path=%s",self.state_path);self.sets=[];stamp=datetime.now().strftime("%Y%m%d_%H%M%S");quarantine=self.state_path.with_name(f"queue_state.corrupt.{stamp}.json")
+            try:os.replace(self.state_path,quarantine);logging.warning("QUEUE corrupt state quarantined path=%s",quarantine)
+            except OSError:logging.exception("QUEUE corrupt state quarantine failed path=%s",self.state_path)
+            self.load_warning="예약 작업 파일이 손상되어 격리했습니다. 빈 예약 목록으로 시작합니다."
     def preflight(self,check_template=None):
         results=[]
         for item in self.sets:
@@ -101,8 +166,10 @@ class QueueManager:
     def cancel(self):self.request_cancel()
     def request_pause(self):self.pause_requested=True
     def resume(self):self.pause_requested=False
-    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None):
-        started=time.perf_counter();sets_total=len(self.sets);self.running=True;self.cancel_requested=False;errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
+    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None,reset_cancel=True):
+        started=time.perf_counter();sets_total=len(self.sets);self.running=True
+        if reset_cancel:self.cancel_requested=False
+        errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
         if sleep_guard:sleep_guard.__enter__()
         try:
             for set_index,item in enumerate(self.sets):

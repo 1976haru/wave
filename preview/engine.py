@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 from dataclasses import dataclass
+from core.runtime_paths import cache_dir
 from time import perf_counter
 from audio.analyzer import AnalysisSettings, analyze_file
 from animation.engine import AnimationEngine
@@ -19,8 +20,8 @@ class PreviewEngine:
         self.width,self.height,self.fps=width,height,fps; self.renderer_choice=renderer; self.features=None; self.animation=None; self.renderer=None; self.template={}; self.background_source=None; self.last_time=-1.0; self.metrics=PreviewMetrics()
     @property
     def duration(self): return float(self.features["duration"][0]) if self.features is not None else 0.0
-    def load(self,audio_path,template,cache_dir="cache"):
-        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_dir); self.renderer=RendererFactory.create(self.renderer_choice,self.template); self.animation=AnimationEngine(self.features,self.template); self.background_source=source_from_template(self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
+    def load(self,audio_path,template,cache_path=None):
+        started=perf_counter(); self.template=dict(template); self.features,hit=analyze_file(audio_path,AnalysisSettings(fps=self.fps,bands=int(template.get("bands",64))),cache_path or cache_dir()); self.renderer=RendererFactory.create(self.renderer_choice,self.template); self.animation=AnimationEngine(self.features,self.template); self.background_source=source_from_template(self.template); self.last_time=-1; self.metrics=PreviewMetrics(self.renderer.name,hit,perf_counter()-started,0); return self.metrics
     def update_template(self,template):
         requested=int(template.get("bands",64)); current=int(self.features["spectrum"].shape[1]) if self.features is not None else requested; old_source=self.template.get("_local_background_source"); self.template=dict(template)
         if old_source != self.template.get("_local_background_source") or self.background_source is None:
