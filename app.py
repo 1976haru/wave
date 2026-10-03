@@ -37,7 +37,7 @@ def packaged_smoke(window,application):
         try:
             import wave
             from mws_queue.queue_manager import JobSet,QueueManager
-            smoke_root=Path(tempfile.gettempdir())/"mws_queue_smoke_v0851"; smoke_root.mkdir(parents=True,exist_ok=True)
+            smoke_root=Path(tempfile.gettempdir())/"mws_queue_smoke_v0852"; smoke_root.mkdir(parents=True,exist_ok=True)
             wav=smoke_root/"smoke.wav"
             with wave.open(str(wav),"wb") as handle:
                 handle.setnchannels(1); handle.setsampwidth(2); handle.setframerate(8000); handle.writeframes((np.zeros(8000,dtype=np.int16)).tobytes())
@@ -57,7 +57,13 @@ def packaged_smoke(window,application):
             for index in range(5):limit_manager.add(JobSet(f"limit-{index}",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")))
             try:limit_manager.add(JobSet("limit-6",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")));limit_enforced=False
             except ValueError:limit_enforced=len(limit_manager.sets)==5
-            report.update({"queue_add_clicked":queue_add_ok,"queue_count":len(window.queue_manager.sets),"queue_card_visible":queue_add_ok,"queue_step":window.current_step,"queue_start_enabled":window.queue_panel.start_button.isEnabled(),"queue_sequential_jobs":7,"queue_sequential_pass":sequential_ok,"queue_ui_completion_pass":ui_completion_ok,"queue_five_active_limit_pass":limit_enforced,"queue_completion_message":window.status.text()})
+            cancel_path=smoke_root/"queue_cancel_state.json";cancel_manager=QueueManager(cancel_path);cancel_manager.sets=[];cancel_manager.add(JobSet("cancel-smoke",[{"audio":str(wav)},{"audio":str(wav)}],output_dir=str(smoke_root/"wave")))
+            cancel_manager.cancel();cancel_manager.cancel();cancel_manager.cancel();repeated_cancel_ok=cancel_manager.cancel_requested
+            cancel_result=cancel_manager.run(lambda *_:(cancel_manager.cancel(),{})[1]);cancel_restart=QueueManager(cancel_path);cancel_restart_ok=cancel_result.completed_removed==0 and len(cancel_restart.sets)==1 and cancel_restart.sets[0].status=="cancelled"
+            complete_path=smoke_root/"queue_complete_state.json";complete_manager=QueueManager(complete_path);complete_manager.sets=[];complete_manager.add(JobSet("complete-smoke",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")));complete_manager.run(lambda *_:{});complete_restart_ok=QueueManager(complete_path).sets==[]
+            from ui.main_window import TaskWorker
+            stop_manager=QueueManager(smoke_root/"queue_stop_state.json");stop_manager.sets=[];stop_manager.add(JobSet("stop-smoke",[{"audio":str(wav)}],output_dir=str(smoke_root/"wave")));stop_manager.running=True;window.worker=TaskWorker("queue",(stop_manager,False));window.worker.runner=stop_manager;window.stop_button.click();application.processEvents();stop_button_ok=stop_manager.cancel_requested and window.isVisible();window.worker=None
+            report.update({"queue_add_clicked":queue_add_ok,"queue_count":len(window.queue_manager.sets),"queue_card_visible":queue_add_ok,"queue_step":window.current_step,"queue_start_enabled":window.queue_panel.start_button.isEnabled(),"queue_sequential_jobs":7,"queue_sequential_pass":sequential_ok,"queue_ui_completion_pass":ui_completion_ok,"queue_five_active_limit_pass":limit_enforced,"queue_cancel_interface_pass":hasattr(cancel_manager,"cancel"),"queue_repeated_cancel_pass":repeated_cancel_ok,"queue_stop_button_pass":stop_button_ok,"queue_cancel_restart_pass":cancel_restart_ok,"queue_completion_restart_pass":complete_restart_ok,"queue_completion_message":window.status.text()})
         except Exception as exc: report.update({"queue_add_clicked":False,"queue_error":repr(exc)})
     shot_value=os.environ.get("MWS_SCREENSHOT_DIR")
     if shot_value:

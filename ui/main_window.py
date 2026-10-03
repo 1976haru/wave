@@ -78,7 +78,7 @@ class TaskWorker(QObject):
                     source=Path(track.get("audio",track.get("source_path",""))); fmt=track.get("format",job.get("export",{}).get("format","webm")); export={**job.get("export",{}),**track.get("export",{})}; resolution=export.pop("resolution","1920x1080"); template=copy.deepcopy(track.get("template_snapshot")) if track.get("template_snapshot") else resolve_template(track.get("preset",job.get("preset","01_clean_bars"))); target=Path(job["output_dir"])/(track.get("output_name") or (source.stem+output_extension(fmt))); options=ExportOptions.from_resolution(resolution,format=fmt,**{k:v for k,v in export.items() if k in {"fps","quality","renderer","width","height","ffmpeg_path","video_codec","include_audio","canvas_mode"}});
                     if track.get("set_audio_files"): return render_set(track["set_audio_files"],target,template,options,track.get("timeline_path"),progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
-                    return render_audio(source,target,template,options,progress_detail=progress_detail)
+                    return render_audio(source,target,template,options,progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                 self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled))
             self.done.emit(result)
         except Exception as exc:self.failed.emit(str(exc))
@@ -98,7 +98,9 @@ class TaskWorker(QObject):
     def system_check(self):
         report=format_report(check_system());QMessageBox.information(self,"System Check",report)
     def cancel(self):
-        if self.runner:self.runner.cancel()
+        if not self.runner:return
+        if hasattr(self.runner,"cancel"):self.runner.cancel()
+        elif hasattr(self.runner,"request_cancel"):self.runner.request_cancel()
 
 class MainWindow(QMainWindow):
     def __init__(self):

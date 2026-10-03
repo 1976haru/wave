@@ -98,6 +98,7 @@ class QueueManager:
             results.append({"id":item.id,"name":item.name,"ready":not errors,"errors":errors})
         return results
     def request_cancel(self):self.cancel_requested=True;self.pause_requested=False
+    def cancel(self):self.request_cancel()
     def request_pause(self):self.pause_requested=True
     def resume(self):self.pause_requested=False
     def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None):

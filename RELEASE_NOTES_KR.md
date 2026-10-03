@@ -1,4 +1,12 @@
-# Music Wave Studio v0.8.5.1
+# Music Wave Studio v0.8.5.2
+
+## v0.8.5.2 Queue cancel crash hotfix
+
+- QueueManager cancel interface crash 수정
+- 작업 중지/앱 종료 시 비정상 종료 수정
+- 예약 작업 완료 후 재실행 안정성 개선
+
+## v0.8.5.1
 
 ## v0.8.5.1 Queue completion hotfix
 
