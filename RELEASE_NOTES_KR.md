@@ -7,6 +7,11 @@
 - SET 렌더 시 현재 곡 1개의 분석 데이터만 메모리에 유지 (one-track-at-a-time SET feature loading)
 - GPU 렌더러 컨텍스트 해제, FFmpeg/배경/렌더러 정리 경로 통일 (renderer/resource cleanup improvements)
 - 숫자 계산 라이브러리(OpenBLAS) 유휴 스레드/메모리 예약 제거, 메모리 기록(MEMORY 로그)과 메모리 부족 경고 추가 (real-world batch stability improvements)
+- **메모리 절약 모드** 추가 (저장 설정 탭, 기본 켜짐) — 다른 프로그램과 함께 사용할 때 권장
+  - 오디오 분석을 별도 짧은 작업 프로세스에서 수행하고 끝나면 즉시 메모리를 Windows에 반환
+  - 분석 구간을 더 작게(128 프레임) 처리, SET 타임라인은 분석 없이 길이만 확인
+  - 세트와 세트 사이에 정리·잠시 휴식, 사용 가능한 메모리가 2GB 미만이면 다음 예약 작업을 잠시 대기
+  - 렌더 속도가 조금 느려질 수 있습니다
 
 # Music Wave Studio v0.8.5.3
 

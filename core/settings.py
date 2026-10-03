@@ -3,7 +3,7 @@ import logging
 from PySide6.QtCore import QByteArray,QSettings
 from core.runtime_paths import state_dir
 class AppSettings:
-    KEYS=("last_audio_folder","last_output_folder","last_template","renderer_mode","quality","resolution","fps","ffmpeg_path","splitter_sizes","language","first_run_done","sleep_prevention","completion_action")
+    KEYS=("last_audio_folder","last_output_folder","last_template","renderer_mode","quality","resolution","fps","ffmpeg_path","splitter_sizes","language","first_run_done","sleep_prevention","completion_action","low_memory_mode")
     def __init__(self,settings=None):
         if settings is None:
             state_dir().mkdir(parents=True,exist_ok=True);settings=QSettings(str(state_dir()/"settings.ini"),QSettings.IniFormat)

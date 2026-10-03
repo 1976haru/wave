@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFi
 from audio.analyzer import AnalysisSettings,analyze_file
 from core.paths import resource_path
 from core.memory_telemetry import checkpoint as memory_checkpoint
+from core import memory_mode
 from core.runtime_paths import user_templates_dir
 from core.version import get_version
 from core.settings import AppSettings
@@ -83,7 +84,7 @@ class TaskWorker(QObject):
                     if track.get("set_audio_files"): return render_set(track["set_audio_files"],target,template,options,track.get("timeline_path"),progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     return render_audio(source,target,template,options,progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
-                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled),reset_cancel=False)
+                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled),reset_cancel=False,between_sets=lambda next_set:memory_mode.set_boundary(next_set,cancel=lambda:manager.cancel_requested,notify=self.detail.emit))
             self.completed.emit(self.kind,result);self.done.emit(result)
         except Exception as exc:logging.exception("TASK worker failed kind=%s",self.kind);self.failed.emit(str(exc))
     def validate_tracks(self):
@@ -187,9 +188,9 @@ class MainWindow(QMainWindow):
     def _color_button(self,form,label,key):
         button=QPushButton();button.clicked.connect(lambda:self.pick_color(key));self.fields[key]=button;form.addRow(label,button)
     def _export_tab(self):
-        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","mov","webm"]);self.export_format.setCurrentText("mp4");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.export_fps.setCurrentIndex(0);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","mov","webm"]);self.export_format.setCurrentText("mp4");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.export_fps.setCurrentIndex(0);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.memory_saver=QCheckBox("메모리 절약 모드");self.memory_saver.setChecked(True);self.memory_saver.setToolTip("긴 플레이리스트 작업 시 메모리 사용량을 줄입니다.\n렌더 속도가 조금 느려질 수 있습니다.");self.memory_saver.toggled.connect(self._memory_saver_changed);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
         self.output_location=QLabel(self.current_output_dir or "출력 폴더를 선택하세요");choose=QPushButton("폴더 변경");choose.clicked.connect(self.choose_output_dir);form.addRow("출력 위치",self.output_location);form.addRow("",choose)
-        for label,control in (("저장 방식",self.canvas_mode),("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed),("Prevent sleep while rendering",self.prevent_sleep)):form.addRow(label,control)
+        for label,control in (("저장 방식",self.canvas_mode),("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed),("Prevent sleep while rendering",self.prevent_sleep),("",self.memory_saver)):form.addRow(label,control)
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
         box=QWidget(); v=QVBoxLayout(box); self.bottom_actions=[]
@@ -627,10 +628,13 @@ class MainWindow(QMainWindow):
     def validate_tracks(self):
         folder=QFileDialog.getExistingDirectory(self,"Select folder with up to 15 tracks")
         if folder:self.start_task("validation",(folder,"validation_results/user_audio_validation.json",15))
+    def _memory_saver_changed(self,checked):
+        memory_mode.set_enabled(checked);self.app_settings.set("low_memory_mode",bool(checked))
     def _restore_settings(self):
         def restore_combo(control,key,default):
             value=str(self.app_settings.get(key,default) or default);control.setCurrentText(value if control.findText(value)>=0 else default)
         restore_combo(self.renderer_choice,'renderer_mode','AUTO');restore_combo(self.quality,'quality','BALANCED');restore_combo(self.resolution,'resolution','1920x1080');restore_combo(self.export_fps,'fps','30')
+        saver=self.app_settings.get("low_memory_mode",True);saver=saver if isinstance(saver,bool) else str(saver).lower() not in {"false","0","no"};self.memory_saver.setChecked(saver);memory_mode.set_enabled(saver)
         ffmpeg=str(self.app_settings.get("ffmpeg_path","") or "");self.ffmpeg_path.setText(ffmpeg if not ffmpeg or Path(ffmpeg).is_file() else "");self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "")
         restored=self.app_settings.restore_window(self)
         visible=any(screen.availableGeometry().intersects(self.frameGeometry()) for screen in QApplication.screens())

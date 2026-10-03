@@ -2,7 +2,7 @@ from __future__ import annotations
 import gc, json, logging, math, subprocess, threading, time
 from collections import deque
 from pathlib import Path
-from audio.analyzer import AnalysisSettings, analysis_duration, analyze_file
+from audio.analyzer import AnalysisSettings, analyze_file, probe_duration
 from animation.engine import AnimationEngine
 from core.ffmpeg import resolve_ffmpeg
 from core.memory_telemetry import checkpoint as memory_checkpoint, low_memory_message
@@ -27,7 +27,9 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
     """Render an ordered folder of tracks into one continuous video timeline.
 
     Only lightweight metadata (path/duration/frame range) is kept for the whole
-    SET; analysis features and the AnimationEngine exist for one track at a time.
+    SET; analysis features and the AnimationEngine exist for one track at a time
+    and the next track is never preloaded.  In memory saver mode a cache miss is
+    analysed in a short-lived worker process (see audio.analyzer.analyze_isolated).
     """
     files = [Path(p) for p in audio_files]
     if not files: raise ValueError("SET에 음원이 없습니다.")
@@ -39,7 +41,8 @@ def render_set(audio_files, target, template, options, timeline_path=None, progr
     entries=[]; total_seconds=0.0
     for path in files:
         if cancel and cancel(): raise InterruptedError("SET 렌더가 중단되었습니다.")
-        duration, hit = analysis_duration(path, settings)
+        # Metadata/streaming probe only: no features exist for the whole SET.
+        duration, hit = probe_duration(path, settings)
         duration=max(duration, 0.0)
         entries.append({"path":str(path),"duration":duration,"start":total_seconds,"cache_hit":hit})
         total_seconds += duration

@@ -129,6 +129,11 @@ def _install_qt_logging():
     qInstallMessageHandler(handler)
 
 def main(argv=None):
+    raw=list(sys.argv[1:] if argv is None else argv)
+    if raw[:1]==["--analysis-worker"]:
+        # Memory saver: isolated one-track analysis process (no Qt, no log file, no instance lock).
+        from audio.analysis_worker import main as analysis_worker_main
+        return analysis_worker_main(raw[1:])
     _configure_logging()
     args=parse_args(argv)
     if args.headless:

@@ -1,6 +1,6 @@
 import os
 from PyInstaller.utils.hooks import collect_all
-hiddenimports=["moderngl","glcontext","av","psutil"]
+hiddenimports=["moderngl","glcontext","av","psutil","audio.analysis_worker"]
 datas=[("templates","templates"),("resources","resources"),("visualizers/profiles","visualizers/profiles"),("VERSION.txt",".")]
 ffmpeg_bin=r"C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-7.1-full_build\\bin\\ffmpeg.exe"
 ffprobe_bin=r"C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-7.1-full_build\\bin\\ffprobe.exe"
