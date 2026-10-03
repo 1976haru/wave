@@ -6,13 +6,13 @@ import re
 import shutil
 from copy import deepcopy
 from pathlib import Path
+from core.runtime_paths import app_data_root
 
 from .schema import WaveformValidationError, new_waveform, validate_waveform
 
 
 def default_waveform_dir() -> Path:
-    root = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
-    return Path(root) / "MusicWaveStudio" / "waveforms" if root else Path.home() / ".music_wave_studio" / "waveforms"
+    return app_data_root() / "waveforms"
 
 
 def safe_filename(name: str) -> str:
@@ -24,6 +24,19 @@ class UserWaveformStore:
     def __init__(self, directory: str | Path | None = None, installed_families: set[str] | None = None):
         self.directory = Path(directory) if directory else default_waveform_dir()
         self.installed_families = installed_families or {"soft_round_led"}
+        if directory is None:self._migrate_legacy()
+
+    def _migrate_legacy(self):
+        roaming=os.environ.get("APPDATA")
+        legacy=Path(roaming)/"MusicWaveStudio"/"waveforms" if roaming else None
+        if not legacy or not legacy.is_dir() or legacy.resolve()==self.directory.resolve():return
+        try:
+            self.directory.mkdir(parents=True,exist_ok=True)
+            for source in legacy.glob("*.mwswave"):
+                target=self.directory/source.name
+                if not target.exists():shutil.copy2(source,target)
+        except OSError:
+            pass
 
     def _ensure(self):
         self.directory.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,14 @@
+# Music Wave Studio v0.8.5.3
+
+## v0.8.5.3 Stability hardening
+
+- 시작/재시작 crash 방어와 단계별 startup 로그
+- runtime state를 LocalAppData로 이동
+- queue state 손상 복구, 격리, atomic 저장, 기존 state migration
+- 안전한 startup/shutdown 및 QThread lifecycle 정리
+- crash recovery, safe mode, single-instance 보호
+- packaged runtime 안정성과 ONEDIR 산출물 검증 강화
+
 # Music Wave Studio v0.8.5.2
 
 ## v0.8.5.2 Queue cancel crash hotfix
