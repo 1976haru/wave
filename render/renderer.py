@@ -426,6 +426,17 @@ void main(){vec4 a=texture(original,uv);vec4 g=texture(glow,uv)*strength;frag=ve
         self.blur_vao=self.ctx.simple_vertex_array(self.blur_program,self.screen,"position");self.composite_vao=self.ctx.simple_vertex_array(self.composite_program,self.screen,"position")
         self._instance_capacity=4096; self._rect_buffer=self.ctx.buffer(reserve=self._instance_capacity*16,dynamic=True); self._color_buffer=self.ctx.buffer(reserve=self._instance_capacity*12,dynamic=True)
     def available(self):return True
+    def release(self):
+        """Free the standalone GL context; moderngl does not release it on garbage collection."""
+        ctx=getattr(self,"ctx",None);self.ctx=None
+        if ctx is None:return
+        for name in ("blur_vao","composite_vao","_rect_buffer","_color_buffer","quad","screen","shape_program","special_program","line_program","blur_program","composite_program"):
+            item=getattr(self,name,None);setattr(self,name,None)
+            try:
+                if item is not None:item.release()
+            except Exception:pass
+        try:ctx.release()
+        except Exception:pass
     def _draw_shapes(self,w,h,values,t):
         x0,step,base,maximum,bw=_geometry(w,h,values,t);mirror=bool(t.get("mirror"));rects=[];colors=[]
         for i,v in enumerate(values):
@@ -501,12 +512,15 @@ class AutoRenderer:
     def render_rgba(self,w,h,state,template):
         try:return self.active.render_rgba(w,h,state,template)
         except Exception:
-            self.active=self.cpu;self.name="CPU";return self.cpu.render_rgba(w,h,state,template)
+            release_renderer(self.active if self.active is not self.cpu else None);self.active=self.cpu;self.name="CPU";return self.cpu.render_rgba(w,h,state,template)
+    def release(self):
+        if self.active is not self.cpu:release_renderer(self.active);self.active=self.cpu
 
 class AdaptiveRenderer:
     """AUTO renderer: micro-benchmarks CPU/GPU for the requested geometry and caches the choice."""
     def __init__(self, template=None):
         self.template=dict(template or {"renderer":"bars","bands":64}); self.cpu=CPURenderer(); self.active=self.cpu; self.name="CPU"; self.profile={"renderer":str(self.template.get("renderer","bars"))}
+        gpu=None
         try:
             gpu=GPUBarRenderer(); values=np.abs(np.sin(np.linspace(0,9,64))).astype("f4")*.55+.2; state={"values":values}
             import time
@@ -516,6 +530,7 @@ class AdaptiveRenderer:
             if gpu_ms <= cpu_ms*1.15: self.active=gpu; self.name="GPU"
         except Exception as exc:
             self.profile["gpu_error"]=repr(exc)
+        if gpu is not None and self.active is not gpu:release_renderer(gpu)
         self._save_profile()
     def _save_profile(self):
         try:
@@ -524,7 +539,16 @@ class AdaptiveRenderer:
     def render_rgba(self,w,h,state,template):
         try:return self.active.render_rgba(w,h,state,template)
         except Exception:
-            self.active=self.cpu; self.name="CPU"; return self.cpu.render_rgba(w,h,state,template)
+            release_renderer(self.active if self.active is not self.cpu else None); self.active=self.cpu; self.name="CPU"; return self.cpu.render_rgba(w,h,state,template)
+    def release(self):
+        if self.active is not self.cpu: release_renderer(self.active); self.active=self.cpu
+
+def release_renderer(renderer):
+    """Release native resources (GL context) held by a renderer; safe for any renderer or None."""
+    release=getattr(renderer,"release",None)
+    if callable(release):
+        try:release()
+        except Exception:pass
 
 class RendererFactory:
     @staticmethod

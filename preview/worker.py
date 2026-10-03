@@ -41,5 +41,7 @@ class PreviewRenderWorker(QObject):
     def stop(self):
         self.running=False;self.mailbox.clear()
         if self.timer:self.timer.stop()
+        if self.engine is not None:self.engine.release();self.engine=None
+        self.features=None
         self.stopped.emit()
 

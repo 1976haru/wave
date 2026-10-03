@@ -1,5 +1,5 @@
 from __future__ import annotations
-import copy,time,datetime,logging,os,subprocess,wave
+import copy,gc,time,datetime,logging,os,subprocess,wave
 from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QObject,QMetaObject,QThread,QTimer,QUrl,QSize,Signal,Slot,Qt
@@ -8,6 +8,8 @@ from PySide6.QtMultimedia import QAudioOutput,QMediaPlayer
 from PySide6.QtWidgets import (QApplication,QCheckBox,QColorDialog,QComboBox,QFileDialog,QFormLayout,QGroupBox,QHBoxLayout,QInputDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,QMainWindow,QMessageBox,QProgressBar,QPushButton,QScrollArea,QSlider,QSpinBox,QDoubleSpinBox,QTabWidget,QVBoxLayout,QWidget)
 from audio.analyzer import AnalysisSettings,analyze_file
 from core.paths import resource_path
+from core.memory_telemetry import checkpoint as memory_checkpoint
+from core import memory_mode
 from core.runtime_paths import user_templates_dir
 from core.version import get_version
 from core.settings import AppSettings
@@ -60,7 +62,9 @@ class ReferenceAnalysisWorker(QObject):
     def cancel(self):self.cancel_requested=True
 
 class TaskWorker(QObject):
-    done=Signal(object);failed=Signal(str);status=Signal(str);progress=Signal(int,int);detail=Signal(object)
+    # completed carries the task kind so MainWindow can connect a bound slot: PySide6
+    # runs lambda slots on the emitting (worker) thread, bound QObject methods on the GUI thread.
+    done=Signal(object);completed=Signal(str,object);failed=Signal(str);status=Signal(str);progress=Signal(int,int);detail=Signal(object)
     def __init__(self,kind,payload):super().__init__();self.kind=kind;self.payload=payload;self.runner=None
     @Slot()
     def run(self):
@@ -80,8 +84,8 @@ class TaskWorker(QObject):
                     if track.get("set_audio_files"): return render_set(track["set_audio_files"],target,template,options,track.get("timeline_path"),progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     if track.get("segment_manifest") and fmt.lower()=="webm": return render_segmented_track(source,target,template,options,track["segment_manifest"],track["segment_root"],progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
                     return render_audio(source,target,template,options,progress_detail=progress_detail,cancel=lambda: manager.cancel_requested)
-                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled),reset_cancel=False)
-            self.done.emit(result)
+                self.runner=manager;result=manager.run(render_track,progress=lambda si,st,ti,tt,item:self.progress.emit(sum(x.total for x in manager.sets[:si-1])+ti,sum(x.total for x in manager.sets)),progress_detail=self.detail.emit,sleep_guard=SleepPrevention(sleep_enabled),reset_cancel=False,between_sets=lambda next_set:memory_mode.set_boundary(next_set,cancel=lambda:manager.cancel_requested,notify=self.detail.emit))
+            self.completed.emit(self.kind,result);self.done.emit(result)
         except Exception as exc:logging.exception("TASK worker failed kind=%s",self.kind);self.failed.emit(str(exc))
     def validate_tracks(self):
         folder=QFileDialog.getExistingDirectory(self,"Select folder with up to 15 tracks")
@@ -184,9 +188,9 @@ class MainWindow(QMainWindow):
     def _color_button(self,form,label,key):
         button=QPushButton();button.clicked.connect(lambda:self.pick_color(key));self.fields[key]=button;form.addRow(label,button)
     def _export_tab(self):
-        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","mov","webm"]);self.export_format.setCurrentText("mp4");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.export_fps.setCurrentIndex(0);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
+        widget=QWidget();form=QFormLayout(widget);self.export_format=QComboBox();self.export_format.addItems(["mp4","mov","webm"]);self.export_format.setCurrentText("mp4");self.canvas_mode=QComboBox();self.canvas_mode.addItems(["빠른 투명 파형","전체 화면 투명 영상"]);self.canvas_mode.setCurrentIndex(0);self.resolution=QComboBox();self.resolution.addItems(["1920x1080","1080x1920","1080x1080","Custom"]);self.export_fps=QComboBox();self.export_fps.addItems(["24","30","60"]);self.export_fps.setCurrentIndex(0);self.renderer_choice=QComboBox();self.renderer_choice.addItems(["AUTO","GPU","CPU"]);self.quality=QComboBox();self.quality.addItems(["BALANCED","QUALITY","PREVIEW"]);self.skip_completed=QCheckBox();self.skip_completed.setChecked(True);self.prevent_sleep=QCheckBox();self.prevent_sleep.setChecked(True);self.memory_saver=QCheckBox("메모리 절약 모드");self.memory_saver.setChecked(True);self.memory_saver.setToolTip("긴 플레이리스트 작업 시 메모리 사용량을 줄입니다.\n렌더 속도가 조금 느려질 수 있습니다.");self.memory_saver.toggled.connect(self._memory_saver_changed);self.custom_width=QSpinBox();self.custom_width.setRange(320,7680);self.custom_width.setValue(1920);self.custom_height=QSpinBox();self.custom_height.setRange(320,7680);self.custom_height.setValue(1080);self.ffmpeg_path=QLineEdit();self.ffmpeg_path.setPlaceholderText("System PATH (default)")
         self.output_location=QLabel(self.current_output_dir or "출력 폴더를 선택하세요");choose=QPushButton("폴더 변경");choose.clicked.connect(self.choose_output_dir);form.addRow("출력 위치",self.output_location);form.addRow("",choose)
-        for label,control in (("저장 방식",self.canvas_mode),("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed),("Prevent sleep while rendering",self.prevent_sleep)):form.addRow(label,control)
+        for label,control in (("저장 방식",self.canvas_mode),("Format",self.export_format),("Resolution",self.resolution),("Custom Width",self.custom_width),("Custom Height",self.custom_height),("FPS",self.export_fps),("Renderer",self.renderer_choice),("Quality",self.quality),("FFmpeg Path",self.ffmpeg_path),("Skip completed outputs",self.skip_completed),("Prevent sleep while rendering",self.prevent_sleep),("",self.memory_saver)):form.addRow(label,control)
         self.format_help=QLabel("MP4 H.264 · black background · CapCut Screen blend");self.export_format.currentTextChanged.connect(self._format_help);form.addRow(self.format_help);return widget
     def _bottom_panel(self):
         box=QWidget(); v=QVBoxLayout(box); self.bottom_actions=[]
@@ -217,7 +221,7 @@ class MainWindow(QMainWindow):
         self.progress_page.setVisible(visible);self.performance.setVisible(False if visible else self.simple_controls.advanced.isChecked())
 
     def _first_run_and_resume(self):
-        if os.environ.get("MWS_SMOKE_TEST")=="1" or os.environ.get("MWS_AUTO_CLOSE_MS"):return
+        if os.environ.get("MWS_SMOKE_TEST")=="1" or os.environ.get("MWS_AUTO_CLOSE_MS") or os.environ.get("MWS_TEST_QUEUE_PLAN"):return
         if not bool(self.app_settings.get("first_run_done",False)):
             QMessageBox.information(self,"Music Wave Studio에 오신 것을 환영합니다.","1. 음원을 넣습니다.\n2. 파형 스타일을 고릅니다.\n3. 미리봅니다.\n4. 저장 형식을 고릅니다.\n5. 만들기를 누릅니다.")
             self.app_settings.set("first_run_done",True)
@@ -226,6 +230,8 @@ class MainWindow(QMainWindow):
             self.queue_panel.start_button.setText("이어 실행")
             self.status.setText("이전 예약 작업이 있습니다. 준비가 되면 [이어 실행] 버튼을 눌러 주세요.")
     def _queue_completion(self,result):
+        gc.collect();memory_checkpoint("queue_end",sets_success=result.sets_success,sets_failed=result.sets_failed)
+        if not self.shutting_down and self.preview_engine.features is not None:self.start_preview_worker(self.preview_engine.features);self.render_preview()
         self.queue_manager.prune_completed()
         self.queue_panel.refresh()
         self._show_progress_page(False);self.navigate_step(4)
@@ -305,7 +311,7 @@ class MainWindow(QMainWindow):
         if bad:
             QMessageBox.warning(self,"실행 전 검사","일부 예약 작업을 시작할 수 없습니다. 예약 작업 탭에서 실행 전 검사 결과를 확인하세요.")
             return
-        self.navigate_step(4);self._show_progress_page(True);self.primary_action.setVisible(False);self.secondary_action.setVisible(False);self._render_started_at=time.perf_counter(); self.pause_button.setVisible(True); self.stop_button.setVisible(True);self.progress_title.setText("\uc601\uc0c1 \ub9cc\ub4dc\ub294 \uc911");self.progress_detail_label.setText("\uc791\uc5c5 \uc900\ube44 \uc911...");self.start_task("queue",(self.queue_manager,self.prevent_sleep.isChecked()));self.status.setText("FFmpeg \uc2dc\uc791 \uc911...")
+        self.pause();self.stop_preview_worker();memory_checkpoint("queue_start",sets=len(self.queue_manager.sets));self.navigate_step(4);self._show_progress_page(True);self.primary_action.setVisible(False);self.secondary_action.setVisible(False);self._render_started_at=time.perf_counter(); self.pause_button.setVisible(True); self.stop_button.setVisible(True);self.progress_title.setText("\uc601\uc0c1 \ub9cc\ub4dc\ub294 \uc911");self.progress_detail_label.setText("\uc791\uc5c5 \uc900\ube44 \uc911...");self.start_task("queue",(self.queue_manager,self.prevent_sleep.isChecked()));self.status.setText("FFmpeg \uc2dc\uc791 \uc911...")
     def _apply_theme(self):self.setStyleSheet("QWidget{background:#11151C;color:#F4F7FA;font-size:13px}QGroupBox{border:1px solid #394657;border-radius:5px;margin-top:8px;padding-top:10px}QGroupBox::title{color:#F4F7FA}QPushButton,QComboBox,QSpinBox,QDoubleSpinBox,QLineEdit{background:#222B37;color:#F4F7FA;border:1px solid #394657;padding:7px;border-radius:4px;min-height:24px}QPushButton:hover,QComboBox:hover{background:#2E4663;border-color:#4A90E2}QPushButton:pressed,QPushButton:checked{background:#4A90E2;color:white}QTabWidget::pane{background:#181E27;border:1px solid #394657}QTabBar::tab{background:#181E27;color:#B7C0CB;padding:10px 14px;min-height:20px}QTabBar::tab:selected{background:#4A90E2;color:#FFFFFF}QTabBar::tab:hover{background:#2E4663;color:#FFFFFF}QListWidget,QTableWidget{background:#181E27;color:#F4F7FA;border:1px solid #394657}QHeaderView::section{background:#222B37;color:#F4F7FA;padding:6px}QSlider::groove:horizontal{background:#394657;height:6px}QSlider::handle:horizontal{background:#4A90E2;width:14px;margin:-5px 0}QProgressBar{background:#222B37;color:#F4F7FA;border:1px solid #394657;text-align:center;min-height:28px;font-size:14px;font-weight:bold}QProgressBar::chunk{background:#4A90E2}QToolTip{background:#222B37;color:#F4F7FA;border:1px solid #4A90E2}")
     def _default_wave_dir(self):
         if not self.audio_files:return ""
@@ -318,6 +324,7 @@ class MainWindow(QMainWindow):
         if not files:return False
         self.audio_files=files;self.audio_list.clear();self.audio_list.addItems([Path(path).name for path in files]);self.set_output_dir(str(Path(folder)/"wave"));self.navigate_step(1);self.analyze_audio();return True
     def render_detail(self,event):
+        if "memory_warning" in event:self.status.setText(event["memory_warning"]);return
         percent=float(event.get("percent",0));self.song_progress.setValue(int(percent))
         track=event.get("track_index",1);track_total=event.get("track_total",len(self.audio_files) or 1);set_index=event.get("set_index",1);set_total=event.get("set_total",1);overall=((set_index-1)+(track-1+percent/100.0)/max(track_total,1))/max(set_total,1)*100.0;self.total_progress.setValue(int(max(0,min(100,overall))))
         name=Path(self.audio_files[track-1]).name if self.audio_files and 0<track<=len(self.audio_files) else ""
@@ -355,7 +362,7 @@ class MainWindow(QMainWindow):
             self.reference_status.setText(self.translator.tr("reference_start_failed"));return
         if not self.reference_images:return
         self.reference_analyze_button.setEnabled(False);self.reference_cancel_button.show();self.reference_status.setText(self.translator.tr("reference_preparing"))
-        thread=QThread(self);worker=ReferenceAnalysisWorker(list(self.reference_images),self.roi);self.reference_thread=thread;self.reference_worker=worker;worker.moveToThread(thread);thread.started.connect(worker.run);worker.stage_changed.connect(lambda name,current,total:self.reference_status.setText(f"{current} / {total} {name}"));worker.result_ready.connect(self.apply_reference);worker.failed.connect(self.reference_analysis_failed);worker.cancelled.connect(lambda:self.reference_status.setText(self.translator.tr("reference_cancelled")));worker.finished.connect(self.reference_analysis_finished);worker.finished.connect(worker.deleteLater);worker.finished.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.finished.connect(lambda:self._clear_reference_thread(thread));thread.start()
+        thread=QThread(self);worker=ReferenceAnalysisWorker(list(self.reference_images),self.roi);self.reference_thread=thread;self.reference_worker=worker;worker.moveToThread(thread);thread.started.connect(worker.run);worker.stage_changed.connect(self._reference_stage);worker.result_ready.connect(self.apply_reference);worker.failed.connect(self.reference_analysis_failed);worker.cancelled.connect(self._reference_cancelled);worker.finished.connect(self.reference_analysis_finished);worker.finished.connect(worker.deleteLater);worker.finished.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.finished.connect(self._reference_thread_finished);thread.start()
     def _clear_reference_thread(self,thread):
         if self.reference_thread is thread:self.reference_thread=None;self.reference_worker=None
     def cancel_reference_analysis(self):
@@ -508,9 +515,25 @@ class MainWindow(QMainWindow):
         if self.audio_files:self.start_task("analysis",(self.audio_files[0],AnalysisSettings(fps=24,bands=int(self.template["bands"]),fft_window=self.fft_window.currentText(),spectrum_mapping=self.spectrum_mapping.currentText())))
     def start_task(self,kind,payload):
         if self.shutting_down or (self.thread and self.thread.isRunning()):return False
-        thread=QThread(self);worker=TaskWorker(kind,payload);self.thread=thread;self.worker=worker;worker.moveToThread(thread);thread.started.connect(worker.run);worker.status.connect(self.status.setText);worker.progress.connect(lambda a,b:self.total_progress.setValue(int(a*100/b)));worker.detail.connect(self.render_detail);worker.failed.connect(self.task_failed);worker.done.connect(lambda result:self.task_done(kind,result));worker.done.connect(worker.deleteLater);worker.failed.connect(worker.deleteLater);worker.done.connect(thread.quit);worker.failed.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.finished.connect(lambda:self._clear_task_thread(thread));thread.start();self.status.setText(f"{kind.title()} running…");return True
+        thread=QThread(self);worker=TaskWorker(kind,payload);self.thread=thread;self.worker=worker;worker.moveToThread(thread);thread.started.connect(worker.run);worker.status.connect(self.status.setText);worker.progress.connect(self._task_progress);worker.detail.connect(self.render_detail);worker.failed.connect(self.task_failed);worker.completed.connect(self.task_done);worker.done.connect(worker.deleteLater);worker.failed.connect(worker.deleteLater);worker.done.connect(thread.quit);worker.failed.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.finished.connect(self._task_thread_finished);thread.start();self.status.setText(f"{kind.title()} running…");return True
     def _clear_task_thread(self,thread):
         if self.thread is thread:self.thread=None;self.worker=None
+    @Slot()
+    def _task_thread_finished(self):
+        thread=self.sender()
+        if thread is None or thread is self.thread:self.thread=None;self.worker=None
+    @Slot(int,int)
+    def _task_progress(self,value,total):self.total_progress.setValue(int(value*100/max(total,1)))
+    @Slot(str,int,int)
+    def _reference_stage(self,name,current,total):self.reference_status.setText(f"{current} / {total} {name}")
+    @Slot()
+    def _reference_cancelled(self):self.reference_status.setText(self.translator.tr("reference_cancelled"))
+    @Slot()
+    def _reference_thread_finished(self):
+        thread=self.sender()
+        if thread is None or thread is self.reference_thread:self._clear_reference_thread(self.reference_thread)
+    @Slot(str)
+    def _preview_ready(self,name):self.preview_engine.metrics.renderer=name
     def task_done(self,kind,result):
         if kind=="analysis":
             features,hit,elapsed=result;self.preview_engine.features=features;self.navigate_step(2);self.preview_engine.template=dict(self.template);self.preview_engine.metrics.cache_hit=hit;self.preview_engine.metrics.analysis_seconds=elapsed;self.timeline.setMaximum(int(float(features["duration"][0])*1000));self.start_preview_worker(features);self.render_preview()
@@ -527,7 +550,7 @@ class MainWindow(QMainWindow):
     def task_failed(self,error):self.status.setText("Failed: "+error)
     def start_preview_worker(self,features):
         if self.shutting_down or self.safe_mode:return
-        self.stop_preview_worker();template=self._template_with_local_background();self.preview_mailbox=LatestFrameMailbox();thread=QThread(self);worker=PreviewRenderWorker(features,template,self.renderer_choice.currentText(),self.preview_mailbox);self.preview_thread=thread;self.preview_worker=worker;worker.moveToThread(thread);thread.started.connect(worker.start);worker.frameReady.connect(self.preview_frame_ready);worker.ready.connect(lambda name:setattr(self.preview_engine.metrics,"renderer",name));worker.failed.connect(self.task_failed);worker.stopped.connect(worker.deleteLater);worker.stopped.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.start()
+        self.stop_preview_worker();template=self._template_with_local_background();self.preview_mailbox=LatestFrameMailbox();thread=QThread(self);worker=PreviewRenderWorker(features,template,self.renderer_choice.currentText(),self.preview_mailbox);self.preview_thread=thread;self.preview_worker=worker;worker.moveToThread(thread);thread.started.connect(worker.start);worker.frameReady.connect(self.preview_frame_ready);worker.ready.connect(self._preview_ready);worker.failed.connect(self.task_failed);worker.stopped.connect(worker.deleteLater);worker.stopped.connect(thread.quit);thread.finished.connect(thread.deleteLater);thread.start()
     def stop_preview_worker(self):
         if self.preview_thread and self.preview_thread.isRunning() and self.preview_worker:
             QMetaObject.invokeMethod(self.preview_worker,"stop",Qt.BlockingQueuedConnection);self.preview_thread.quit();self.preview_thread.wait(3000)
@@ -605,10 +628,13 @@ class MainWindow(QMainWindow):
     def validate_tracks(self):
         folder=QFileDialog.getExistingDirectory(self,"Select folder with up to 15 tracks")
         if folder:self.start_task("validation",(folder,"validation_results/user_audio_validation.json",15))
+    def _memory_saver_changed(self,checked):
+        memory_mode.set_enabled(checked);self.app_settings.set("low_memory_mode",bool(checked))
     def _restore_settings(self):
         def restore_combo(control,key,default):
             value=str(self.app_settings.get(key,default) or default);control.setCurrentText(value if control.findText(value)>=0 else default)
         restore_combo(self.renderer_choice,'renderer_mode','AUTO');restore_combo(self.quality,'quality','BALANCED');restore_combo(self.resolution,'resolution','1920x1080');restore_combo(self.export_fps,'fps','30')
+        saver=self.app_settings.get("low_memory_mode",True);saver=saver if isinstance(saver,bool) else str(saver).lower() not in {"false","0","no"};self.memory_saver.setChecked(saver);memory_mode.set_enabled(saver)
         ffmpeg=str(self.app_settings.get("ffmpeg_path","") or "");self.ffmpeg_path.setText(ffmpeg if not ffmpeg or Path(ffmpeg).is_file() else "");self.current_output_dir=str(self.app_settings.get("last_output_folder","") or "")
         restored=self.app_settings.restore_window(self)
         visible=any(screen.availableGeometry().intersects(self.frameGeometry()) for screen in QApplication.screens())

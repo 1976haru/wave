@@ -166,15 +166,19 @@ class QueueManager:
     def cancel(self):self.request_cancel()
     def request_pause(self):self.pause_requested=True
     def resume(self):self.pause_requested=False
-    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None,reset_cancel=True):
+    def run(self,render_track,progress=None,skip_completed=True,sleep_guard=None,progress_detail=None,reset_cancel=True,between_sets=None):
         started=time.perf_counter();sets_total=len(self.sets);self.running=True
         if reset_cancel:self.cancel_requested=False
-        errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0
+        errors=[];tracks_success=tracks_failed=sets_success=sets_failed=0;ran_any=False
         if sleep_guard:sleep_guard.__enter__()
         try:
             for set_index,item in enumerate(self.sets):
                 if self.cancel_requested:break
                 if item.status=="completed" and skip_completed:continue
+                # SET boundary: cleanup / cool-down / memory guard before every SET after the first.
+                if between_sets and ran_any:between_sets(set_index+1)
+                if self.cancel_requested:break
+                ran_any=True
                 item.status="running";item.error="";item.completed=0;item.failed=0;self.save()
                 for track_index,track in enumerate(item.tracks):
                     if self.cancel_requested:break

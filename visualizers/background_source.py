@@ -72,6 +72,7 @@ class LocalBackgroundSource:
     def close(self) -> None:
         if self.capture is not None:
             self.capture.release(); self.capture = None
+        self.image = None
 
 
 def source_from_template(template: dict) -> LocalBackgroundSource | None:
