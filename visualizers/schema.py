@@ -14,6 +14,7 @@ SIGNATURE_VARIANTS = {"MIDNIGHT_PULSE", "SILK_WAVE", "TWO_HEARTS"}
 SIGNATURE_MOTIONS = {"CALM", "STANDARD", "DYNAMIC", "VERY_DYNAMIC"}
 SIGNATURE_VERTICAL = {"TOP", "CENTER", "BOTTOM"}
 SIGNATURE_PRESENCE = {"SOFT", "DEFAULT", "CRISP"}
+MORNING_SHAPES = {"MORNING_HALO", "PEARL_HALO", "TWIN_HALO", "BREATHING_RING", "SUNRISE_ARC", "SOFT_OVAL", "VERTICAL_OVAL", "ROUND_SQUARE", "PEARL_SQUARE", "SOFT_DIAMOND", "HEART_WHISPER", "PEARL_HEART", "SOFT_CAPSULE", "CLOUD_LOOP", "PETAL_LOOP", "FLOWER_HALO", "RIBBON_ORBIT", "STEREO_ORBIT", "DOTTED_ORBIT", "CAFE_FRAME"}
 ADVANCED_FIELDS = {
     "bands": (8, 128), "dot_diameter": (2.0, 10.0), "horizontal_gap": (2.0, 30.0),
     "vertical_gap": (2.0, 16.0), "amplitude_gain": (.25, 2.0), "attack": (.02, .95),
@@ -79,7 +80,14 @@ def validate_waveform(data: dict, installed_families: set[str] | None = None) ->
         variant=str(signature.get("variant","MIDNIGHT_PULSE")).upper();motion=str(signature.get("motion","DYNAMIC")).upper();vertical=str(signature.get("vertical_position","BOTTOM")).upper();presence=str(signature.get("presence","CRISP")).upper();size=float(signature.get("size",1.0))
         if variant not in SIGNATURE_VARIANTS or motion not in SIGNATURE_MOTIONS or vertical not in SIGNATURE_VERTICAL or presence not in SIGNATURE_PRESENCE or not .7<=size<=1.3:raise WaveformValidationError("Unsupported Tokyo Signature option.")
         signature={"variant":variant,"motion":motion,"size":size,"vertical_position":vertical,"horizontal_position":position,"presence":presence,"auto_adapt":bool(signature.get("auto_adapt",True)),"local_adapt":bool(signature.get("local_adapt",True)),"colors":[str(c).upper() for c in signature.get("colors",[]) if HEX.match(str(c))]}
-    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced", "signature"}
+    morning = data.get("morning_shape", {})
+    if family == "morning_shape":
+        if not isinstance(morning, dict): raise WaveformValidationError("Morning Shape settings must be a JSON object.")
+        shape_id=str(morning.get("shape_id","MORNING_HALO")).upper();movement=str(morning.get("movement","CALM")).upper();mode=str(morning.get("color_mode","SOLID")).upper();stroke=str(morning.get("stroke_style","THIN")).upper();glow=str(morning.get("glow_level","SUBTLE")).upper()
+        color_a=str(morning.get("color_a","#FFF8EC")).upper();color_b=str(morning.get("color_b","#FFCDB6")).upper();size=float(morning.get("shape_size",1));x=float(morning.get("position_x",.5));y=float(morning.get("position_y",.5));response=float(morning.get("response_strength",1));opacity=float(morning.get("opacity",.88))
+        if shape_id not in MORNING_SHAPES or movement not in {"CALM","STANDARD","LIVELY"} or mode not in {"SOLID","GRADIENT"} or stroke not in {"THIN","DEFAULT","THICK"} or glow not in {"NONE","SUBTLE","DEFAULT"} or not HEX.match(color_a) or not HEX.match(color_b) or not .5<=size<=2 or not .05<=x<=.95 or not .05<=y<=.95 or not .25<=response<=2 or not .4<=opacity<=1:raise WaveformValidationError("Unsupported Morning Shape option.")
+        morning={"shape_id":shape_id,"shape_size":size,"position_x":x,"position_y":y,"movement":movement,"response_strength":response,"color_mode":mode,"color_a":color_a,"color_b":color_b,"opacity":opacity,"stroke_style":stroke,"glow_level":glow,"local_adapt":bool(morning.get("local_adapt",True))}
+    known = {"format", "format_version", "name", "description", "renderer_family", "theme", "intensity", "width", "position", "color_mode", "colors", "auto_adapt", "local_adapt", "advanced", "signature", "morning_shape"}
     warnings += [f"Ignored field: {key}" for key in data if key not in known]
     clean = {"format": FORMAT, "format_version": FORMAT_VERSION, "name": name,
              "description": str(data.get("description", ""))[:500], "renderer_family": family,
@@ -87,6 +95,7 @@ def validate_waveform(data: dict, installed_families: set[str] | None = None) ->
              "color_mode": color_mode, "colors": [str(c).upper() for c in colors] if color_mode == "CUSTOM" else [],
              "auto_adapt": bool(data.get("auto_adapt", True)), "local_adapt": bool(data.get("local_adapt", True)), "advanced": clean_advanced}
     if family == "tokyo_signature": clean["signature"] = signature
+    if family == "morning_shape": clean["morning_shape"] = morning
     return clean, warnings
 
 
@@ -96,4 +105,4 @@ def new_waveform(name: str, **values) -> dict:
             "width": "STANDARD", "position": "LEFT", "color_mode": "THEME", "colors": [],
             "auto_adapt": True, "local_adapt": True, "advanced": {}}
     data.update(deepcopy(values))
-    return validate_waveform(data, {"soft_round_led", "tokyo_signature"})[0]
+    return validate_waveform(data, {"soft_round_led", "tokyo_signature", "morning_shape"})[0]

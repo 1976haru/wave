@@ -119,3 +119,12 @@
 - CapCut Screen 합성 workflow
 
 실제 GitHub Release publish는 사용자 승인 후 진행합니다.
+
+# Music Wave Studio v0.8.6.0
+
+- Added 20 Morning Chill Shape visualizers
+- Added circular, oval, heart, capsule and soft geometric waveform styles
+- Added waveform size control
+- Added custom waveform color and soft gradient
+- Added opacity/stroke/glow controls
+- Preserved Low Memory Mode architecture

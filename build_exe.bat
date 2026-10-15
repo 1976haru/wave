@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "VERSION=0.8.5.4"
+set "VERSION=0.8.6.0"
 set "TARGET=dist\MusicWaveStudio_v%VERSION%"
 if exist "build\music_wave_studio" rmdir /s /q "build\music_wave_studio"
 if exist "%TARGET%" rmdir /s /q "%TARGET%"
