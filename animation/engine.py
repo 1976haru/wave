@@ -12,6 +12,10 @@ class AnimationEngine:
             from visualizers.families.soft_round_led import resolve_profile
             dynamics=resolve_profile(template,960,160,{"auto_gain":self.visualizer_auto_gain})
             self.t["attack"]=1-float(dynamics["attack"]);self.t["decay"]=float(dynamics["release"])
+        if template.get("renderer_family")=="morning_shape":
+            # Calm perimeter motion: about 0.4-1.2 seconds of visual settling at
+            # normal frame rates, without changing other renderer families.
+            self.t["attack"]=float(template.get("morning_attack",.72));self.t["decay"]=float(template.get("morning_release",.94));self.t["smoothing"]=float(template.get("morning_smoothing",.32))
         if str(template.get("renderer","")).lower()=="stereo_signature" and (template.get("adaptive_normalization") or template.get("signature_tier")=="FINAL"):
             spectrum=np.asarray(features["spectrum"],np.float32)
             low=np.percentile(spectrum,20,axis=0).astype(np.float32);high=np.percentile(spectrum,95,axis=0).astype(np.float32)

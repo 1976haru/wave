@@ -38,7 +38,38 @@ def test_geometry_is_finite_continuous_and_bounded():
         path=normalized_path(sid,240);assert path.shape==(240,2);assert np.isfinite(path).all()
         if sid!="SUNRISE_ARC":assert np.linalg.norm(path[0]-path[-1])<.2
         template={"_quality":"QUALITY","morning_shape":{"shape_id":sid,"movement":"LIVELY","shape_size":1.0,"response_strength":2.0}}
-        geometry=shape_geometry(1920,1080,state(),template);assert np.isfinite(geometry["points"]).all();assert np.max(np.abs(geometry["deformation"]))<=.095001
+        geometry=shape_geometry(1920,1080,state(),template);assert np.isfinite(geometry["points"]).all();assert np.max(np.abs(geometry["deformation"]))<=.080001
+
+
+def test_exact_circle_oval_ratios_radial_normals_and_clean_center():
+    for sid in ("MORNING_HALO","PEARL_HALO","TWIN_HALO","BREATHING_RING","FLOWER_HALO"):
+        g=shape_geometry(1920,1080,state(),{"morning_shape":{"shape_id":sid}});span=np.ptp(g["base_points"],axis=0)
+        if sid!="FLOWER_HALO":assert abs(float(span[0]/span[1])-1)<.015
+        radial=g["base_points"]-g["profile"]["center"];assert np.mean(np.sum(radial*g["normals"],axis=1))>0
+        assert np.min(np.linalg.norm(g["points"]-g["profile"]["center"],axis=1))>150
+    soft=normalized_path("SOFT_OVAL",240);vertical=normalized_path("VERTICAL_OVAL",240)
+    assert 1.45<np.ptp(soft[:,0])/np.ptp(soft[:,1])<1.7
+    assert 1.35<np.ptp(vertical[:,1])/np.ptp(vertical[:,0])<1.55
+
+
+def test_morning_frame_has_no_legacy_bottom_equalizer():
+    template=load_template(ROOT/"templates/60_morning_halo.json");frame=RendererFactory.create("CPU",template).render_rgba(960,540,state(),template)
+    assert not np.any(frame[int(540*.78):,:,3])
+    center=frame[220:320,430:530,3];assert center.max()==0
+
+
+def test_shape_specific_geometry_is_distinct():
+    signatures=[]
+    for sid in SHAPE_IDS:
+        path=normalized_path(sid,240);radius=np.linalg.norm(path,axis=1);signatures.append(np.round(np.r_[np.ptp(path,axis=0),np.percentile(radius,[10,35,60,90])],3))
+    # Parametric families may share broad extents, but every named group must
+    # retain a visibly distinct radial/extent signature.
+    assert len({tuple(row) for row in signatures})>=12
+    contour_ids=("SOFT_OVAL","VERTICAL_OVAL","ROUND_SQUARE","SOFT_DIAMOND","HEART_WHISPER","SOFT_CAPSULE","CLOUD_LOOP","PETAL_LOOP","FLOWER_HALO","CAFE_FRAME")
+    contour_signatures=[]
+    for sid in contour_ids:
+        path=normalized_path(sid,240);radius=np.linalg.norm(path,axis=1);contour_signatures.append(tuple(np.round(np.r_[np.ptp(path,axis=0),np.percentile(radius,[10,35,60,90])],3)))
+    assert len(set(contour_signatures))==len(contour_ids)
 
 
 def test_sizes_colors_gradient_opacity_position_and_render_parity():
