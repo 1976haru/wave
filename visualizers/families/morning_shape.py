@@ -94,7 +94,8 @@ def resolve_profile(template, width, height):
     s = template.get("morning_shape", template)
     shape_id = str(s.get("shape_id", "MORNING_HALO")).upper()
     size = float(np.clip(s.get("shape_size", 1.0), .5, 2.0))
-    scale = min(width, height) * .19 * size
+    # Canonical 100% baseline: a circle is 45% of a 1080p canvas (486 px).
+    scale = min(width, height) * .225 * size
     aspect = width / max(height, 1)
     center = np.array([width * float(np.clip(s.get("position_x", .5), .05, .95)), height * float(np.clip(s.get("position_y", .5), .05, .95))], np.float32)
     # Overlay canvases are shallow; preserve a useful full-frame-equivalent circle.
@@ -153,12 +154,16 @@ class MorningShapeRenderer:
             if image.shape[:2] != (height, width): image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
             if self._frame % 3 == 0 or self._adapt is None:
                 metrics = analyze_local_background(image, g["bounds"]); self._adapt = smooth_adaptation(self._adapt, adaptation_from_metrics(metrics)); self.last_local_metrics = metrics
-            local = self._adapt
+            local = dict(self._adapt)
+            # On bright sky/cafe imagery, preserve the warm-white core.  The
+            # hue-preserving micro underlay supplies contrast; never add black.
+            local["core_brightness_multiplier"]=max(1.0,local["core_brightness_multiplier"])
+            local["core_alpha_multiplier"]=min(1.15,local["core_alpha_multiplier"]+min(.12,.08+.08*local.get("difficulty",0)))
         self._frame += 1
         rgb = np.zeros((height, width, 3), np.float32); alpha = np.zeros((height, width), np.float32)
         color_a = _hex(s.get("color_a", MORNING_COLORS["MORNING_WHITE"])); color_b = _hex(s.get("color_b", MORNING_COLORS["SOFT_PEACH"]))
         gradient = str(s.get("color_mode", "SOLID")).upper() == "GRADIENT"
-        stroke = max(1, round(min(width,height)/540*2.0*STROKE_SCALE.get(str(s.get("stroke_style","THIN")).upper(), .72)))
+        stroke = max(1, round(min(width,height)/540*2.35*STROKE_SCALE.get(str(s.get("stroke_style","THIN")).upper(), .72)))
         opacity = p["opacity"] * local["core_alpha_multiplier"]
         under = derive_underlay_color([[0, s.get("color_a", "#FFF8EC")], [1, s.get("color_b", "#FFCDB6")]], "CUSTOM")
 
@@ -173,7 +178,7 @@ class MorningShapeRenderer:
                 if local["underlay_alpha"] > 0: cv2.line(rgb, tuple(a), tuple(b), under, stroke+2, cv2.LINE_AA); cv2.line(alpha, tuple(a), tuple(b), local["underlay_alpha"]*255, stroke+2, cv2.LINE_AA)
                 cv2.line(rgb, tuple(a), tuple(b), color, stroke, cv2.LINE_AA); cv2.line(alpha, tuple(a), tuple(b), min(255,opacity*alpha_scale*255), stroke, cv2.LINE_AA)
         def paint_dots(points):
-            diameter = max(2.0, min(width,height)/540*4.0*STROKE_SCALE.get(str(s.get("stroke_style","THIN")).upper(), .72))
+            diameter = max(2.0,min(width,height)/540*2.2*STROKE_SCALE.get(str(s.get("stroke_style","THIN")).upper(),.72))
             for i, point in enumerate(points):
                 local_energy=.5+.5*float(np.clip(g["deformation"][i%len(g["deformation"])]/max(p["limit"],1e-6),-1,1));radius=diameter*.5*(.90+.18*local_energy)
                 center=tuple(np.round(point).astype(int));dot_radius=max(1,round(radius))
@@ -183,11 +188,11 @@ class MorningShapeRenderer:
         if sid=="MORNING_HALO":
             # The waveform is the circle: 144 tiny rounded radial segments,
             # never a horizontal/baseline equalizer.
-            energy=np.clip((g["deformation"]/max(p["limit"],1e-6)+1)*.5,0,1);unit=min(width,height)/1080
+            energy=np.clip((g["deformation"]/max(p["limit"],1e-6)+1)*.5,0,1);unit=min(width,height)/1080;segment_width=max(1,round(1.9*unit));extra={"CALM":5.0,"STANDARD":8.0,"LIVELY":11.0}.get(str(s.get("movement","CALM")).upper(),5.0)
             for i,(base_point,normal,value) in enumerate(zip(g["base_points"],g["normals"],energy)):
-                inner=base_point-normal*(1.5*unit);outer=base_point+normal*((2.0+3.5*value)*unit);a=tuple(np.round(inner).astype(int));b=tuple(np.round(outer).astype(int))
-                if local["underlay_alpha"]>0:cv2.line(rgb,a,b,under,stroke+2,cv2.LINE_AA);cv2.line(alpha,a,b,local["underlay_alpha"]*255,stroke+2,cv2.LINE_AA)
-                cv2.line(rgb,a,b,color_at(i,len(energy)),stroke,cv2.LINE_AA);cv2.line(alpha,a,b,min(255,opacity*255),stroke,cv2.LINE_AA)
+                inner=base_point-normal*(1.0*unit);outer=base_point+normal*((2.5+extra*value)*unit);a=tuple(np.round(inner).astype(int));b=tuple(np.round(outer).astype(int))
+                if local["underlay_alpha"]>0:cv2.line(rgb,a,b,under,segment_width+2,cv2.LINE_AA);cv2.line(alpha,a,b,local["underlay_alpha"]*255,segment_width+2,cv2.LINE_AA)
+                cv2.line(rgb,a,b,color_at(i,len(energy)),segment_width,cv2.LINE_AA);cv2.line(alpha,a,b,min(255,opacity*255),segment_width,cv2.LINE_AA)
         elif g["dotted"]:
             pearl_points=g["base_points"]+g["normals"]*g["deformation"][:,None]*p["scale"]*.35;paint_dots(pearl_points)
         elif sid == "DOTTED_ORBIT":

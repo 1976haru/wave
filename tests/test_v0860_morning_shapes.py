@@ -50,12 +50,29 @@ def test_exact_circle_oval_ratios_radial_normals_and_clean_center():
     soft=normalized_path("SOFT_OVAL",240);vertical=normalized_path("VERTICAL_OVAL",240)
     assert 1.45<np.ptp(soft[:,0])/np.ptp(soft[:,1])<1.7
     assert 1.35<np.ptp(vertical[:,1])/np.ptp(vertical[:,0])<1.55
+    halo=load_template(ROOT/"templates/60_morning_halo.json");g=shape_geometry(1920,1080,state(),halo);span=np.ptp(g["base_points"],axis=0)
+    assert 450<=float(span[0])<=520;assert abs(float(span[0]-span[1]))<2
+    assert abs(float(g["profile"]["center"][1]/1080)-.47)<.001
 
 
 def test_morning_frame_has_no_legacy_bottom_equalizer():
     template=load_template(ROOT/"templates/60_morning_halo.json");frame=RendererFactory.create("CPU",template).render_rgba(960,540,state(),template)
     assert not np.any(frame[int(540*.78):,:,3])
     center=frame[220:320,430:530,3];assert center.max()==0
+
+
+def test_halo_radial_bars_are_distinct_from_pearl_dots():
+    frames=[]
+    for name in ("60_morning_halo.json","61_pearl_halo.json"):
+        template=load_template(ROOT/"templates"/name);frames.append(RendererFactory.create("CPU",template).render_rgba(1920,1080,state(),template)[:,:,3])
+    def radial_runs(alpha):
+        runs=[];cx,cy=960,round(1080*.47)
+        for angle in np.linspace(0,2*np.pi,72,endpoint=False):
+            samples=[]
+            for radius in range(220,270):samples.append(alpha[round(cy+np.sin(angle)*radius),round(cx+np.cos(angle)*radius)]>24)
+            indices=np.flatnonzero(samples);runs.append(0 if not len(indices) else int(indices[-1]-indices[0]+1))
+        return np.median(runs)
+    halo_run,pearl_run=map(radial_runs,frames);assert halo_run>=pearl_run*1.35
 
 
 def test_shape_specific_geometry_is_distinct():
