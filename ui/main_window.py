@@ -131,11 +131,13 @@ class MainWindow(QMainWindow):
         r.addLayout(row);self.reference_analyze_button=QPushButton(self.translator.tr("reference_analyze"));self.reference_analyze_button.clicked.connect(self.analyze_reference_images);r.addWidget(self.reference_analyze_button);self.reference_cancel_button=QPushButton(self.translator.tr("reference_cancel"));self.reference_cancel_button.clicked.connect(self.cancel_reference_analysis);self.reference_cancel_button.hide();r.addWidget(self.reference_cancel_button);self.reference_status=QLabel(self.translator.tr("reference_status"));r.addWidget(self.reference_status);roirow=QHBoxLayout();b=QPushButton(self.translator.tr("roi_draw"));b.clicked.connect(self.draw_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_coordinate"));b.clicked.connect(self.set_roi);roirow.addWidget(b);b=QPushButton(self.translator.tr("roi_reset"));b.clicked.connect(self.reset_roi);roirow.addWidget(b);r.addLayout(roirow);self.video_label=QLabel(self.translator.tr("no_video"));r.addWidget(self.video_label);b=QPushButton(self.translator.tr("select_video"));b.clicked.connect(self.add_video);r.addWidget(b);b=QPushButton(self.translator.tr("analyze_motion"));b.clicked.connect(self.analyze_motion);r.addWidget(b);tabs.addTab(ref,"Reference")
         templates=QWidget();t=QVBoxLayout(templates);self.template_filter=QComboBox();self.template_filter.addItems(["추천 스타일","Tokyo Chill Signature","CHILL RAP SIGNATURE","Signature Experimental / v3","Signature Experimental / v2","전체 스타일","시니어","Tokyo Chill","Jazz/Chanson","Modern","Signature Classic · 그와 그녀","Signature Classic · 그의 이야기","Signature Classic · 그녀의 이야기"]);self.template_filter.currentTextChanged.connect(self.filter_templates);t.addWidget(self.template_filter);self.template_list=QListWidget();self.template_list.setViewMode(QListWidget.IconMode);self.template_list.setIconSize(QSize(180,72));self.template_list.setResizeMode(QListWidget.Adjust);self.template_list.setSpacing(8);self.template_list.itemClicked.connect(self.apply_gallery);t.addWidget(self.template_list);b=QPushButton("Save as My Template");b.clicked.connect(self.save_my_template);t.addWidget(b);tabs.addTab(templates,"파형 스타일");self.playlist_panel=PlaylistPanel();tabs.addTab(self.playlist_panel,"곡 목록");self.queue_panel=QueuePanel(self.queue_manager);self.queue_panel.startRequested.connect(self.start_queue);self.queue_panel.add_button.clicked.connect(self.add_to_queue);tabs.addTab(self.queue_panel,"예약 작업");self.left_tabs=tabs;return tabs
     def _center_panel(self):
+        if self.template_filter.findText("Morning Chill Shapes") < 0:self.template_filter.insertItem(1,"Morning Chill Shapes")
         box=QWidget();v=QVBoxLayout(box);self.preview=QLabel("Add audio and click Analyze");self.preview.setMinimumSize(640,360);self.preview.setAlignment(Qt.AlignCenter);self.preview.setStyleSheet("background:#080B10;border:1px solid #283343");v.addWidget(self.preview,1);row=QHBoxLayout()
         for text,fn in (("▶ Play",self.play),("Ⅱ Pause",self.pause),("■ Stop",self.stop)):
             b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
         self.timeline=QSlider(Qt.Horizontal);self.timeline.setRange(0,0);self.timeline.sliderMoved.connect(self.seek);row.addWidget(self.timeline,1);self.time_label=QLabel("00:00 / 00:00");row.addWidget(self.time_label);v.addLayout(row);return box
     def _right_panel(self):
+        QTimer.singleShot(0,lambda:self.tabs.insertTab(3,self._morning_shape_tab(),"Morning Shape"))
         self.tabs=QTabWidget();self.tabs.setUsesScrollButtons(True);self.fields={};self.combos={};self.checks={};self.simple_controls=SimpleControls();self.simple_controls.changed.connect(self.simple_changed);self.tabs.addTab(self.simple_controls,"간편 설정");self.tabs.addTab(self._tokyo_signature_tab(),"Tokyo Chill Signature");self.tabs.addTab(self._universal_visualizer_tab(),"Universal LED");
         audio=("Bands",8,256,1),("Response",.1,3,.01),("Attack",0,1,.01),("Decay",0,1,.01),("Smoothing",0,.95,.01),("Onset Boost",0,2,.01),("Bass Weight",0,2,.01),("Mid Weight",0,2,.01),("High Weight",0,2,.01)
         design=("Width",.1,1,.01),("Height",.05,.9,.01),("Bar Width",.05,1,.01),("Gap",0,.95,.01),("Roundness",0,1,.01),("Opacity",0,1,.01)
@@ -165,6 +167,41 @@ class MainWindow(QMainWindow):
         for text,callback in (("사용",self.use_my_waveform),("편집",self.use_my_waveform),("복제",self.duplicate_my_waveform),("이름변경",self.rename_my_waveform),("내보내기",self.export_my_waveform),("삭제",self.delete_my_waveform),("가져오기",self.import_my_waveform)):
             button=QPushButton(text);button.clicked.connect(callback);actions.addWidget(button)
         layout.addLayout(actions);QTimer.singleShot(0,self.refresh_my_waveforms);return widget
+    def _morning_shape_tab(self):
+        widget=QWidget();self.morning_shape_widget=widget;form=QFormLayout(widget);self.morning_controls={}
+        shape=QComboBox()
+        for ident,name in (("MORNING_HALO","Morning Halo"),("PEARL_HALO","Pearl Halo"),("TWIN_HALO","Twin Halo"),("BREATHING_RING","Breathing Ring"),("SUNRISE_ARC","Sunrise Arc"),("SOFT_OVAL","Soft Oval"),("VERTICAL_OVAL","Vertical Oval"),("ROUND_SQUARE","Soft Rounded Square"),("PEARL_SQUARE","Pearl Rounded Square"),("SOFT_DIAMOND","Soft Diamond"),("HEART_WHISPER","Heart Whisper"),("PEARL_HEART","Pearl Heart"),("SOFT_CAPSULE","Soft Capsule"),("CLOUD_LOOP","Cloud Loop"),("PETAL_LOOP","Petal Loop"),("FLOWER_HALO","Flower Halo"),("RIBBON_ORBIT","Ribbon Orbit"),("STEREO_ORBIT","Stereo Orbit"),("DOTTED_ORBIT","Dotted Orbit"),("CAFE_FRAME","Cafe Frame")):shape.addItem(name,ident)
+        shape.currentIndexChanged.connect(self.morning_controls_changed);self.morning_controls["shape_id"]=shape;form.addRow("Shape",shape)
+        size=QSlider(Qt.Horizontal);size.setRange(50,200);size.setSingleStep(5);size.setValue(100);size.valueChanged.connect(self.morning_controls_changed);self.morning_controls["shape_size"]=size;self.morning_size_label=QLabel("100%");size.valueChanged.connect(lambda value:self.morning_size_label.setText(f"{value}%"));size_row=QHBoxLayout();size_row.addWidget(size);size_row.addWidget(self.morning_size_label);form.addRow("파형 크기",size_row)
+        presets=QHBoxLayout()
+        for text,value in (("작게",80),("기본",100),("크게",125),("아주 크게",150)):
+            button=QPushButton(text);button.clicked.connect(lambda _checked=False,v=value:size.setValue(v));presets.addWidget(button)
+        form.addRow("크기 프리셋",presets)
+        for key,label,items in (("movement","움직임",[("잔잔하게","CALM"),("기본","STANDARD"),("조금 생동감","LIVELY")]),("color_mode","색상 모드",[("단색","SOLID"),("부드러운 2색","GRADIENT")]),("stroke_style","선 굵기",[("가늘게","THIN"),("기본","DEFAULT"),("조금 굵게","THICK")]),("glow_level","빛 번짐",[("없음","NONE"),("은은하게","SUBTLE"),("기본","DEFAULT")])):
+            combo=QComboBox();[combo.addItem(text,value) for text,value in items];combo.currentIndexChanged.connect(self.morning_controls_changed);self.morning_controls[key]=combo;form.addRow(label,combo)
+        response=QDoubleSpinBox();response.setRange(.25,2.0);response.setSingleStep(.05);response.setValue(1.0);response.valueChanged.connect(self.morning_controls_changed);self.morning_controls["response_strength"]=response;form.addRow("반응 강도",response)
+        presets_combo=QComboBox();
+        for name,value in (("Morning White","#FFF8EC"),("Warm Cream","#FFE8C7"),("Soft Peach","#FFCDB6"),("Blush Pink","#F6B9C8"),("Dusty Rose","#DFA4B4"),("Pale Gold","#F4D58D"),("Soft Lavender","#C9B8E8"),("Sky Mist","#B9D9EA"),("Sage Mist","#BCD5C0"),("Pure White","#FFFFFF")):presets_combo.addItem(name,value)
+        presets_combo.currentIndexChanged.connect(lambda:self._morning_preset_changed(presets_combo.currentData()));self.morning_controls["preset"]=presets_combo;form.addRow("Theme",presets_combo)
+        for key,label,default in (("color_a","Color A","#FFF8EC"),("color_b","Color B","#FFCDB6")):
+            edit=QLineEdit(default);edit.setMaxLength(7);edit.editingFinished.connect(self.morning_controls_changed);button=QPushButton("Custom");button.clicked.connect(lambda _checked=False,k=key:self.pick_morning_color(k));row=QHBoxLayout();row.addWidget(edit);row.addWidget(button);self.morning_controls[key]=edit;form.addRow(label,row)
+        opacity=QSlider(Qt.Horizontal);opacity.setRange(40,100);opacity.setValue(88);opacity.valueChanged.connect(self.morning_controls_changed);self.morning_controls["opacity"]=opacity;form.addRow("투명도 40–100%",opacity)
+        for key,label in (("position_x","가로 위치 %"),("position_y","세로 위치 %")):
+            spin=QSpinBox();spin.setRange(5,95);spin.setValue(50);spin.valueChanged.connect(self.morning_controls_changed);self.morning_controls[key]=spin;form.addRow(label,spin)
+        local=QCheckBox();local.setChecked(True);local.toggled.connect(self.morning_controls_changed);self.morning_controls["local_adapt"]=local;form.addRow("Local Background Adapt",local)
+        save=QPushButton("My Waveforms에 저장");save.clicked.connect(self.save_my_waveform);form.addRow(save);return widget
+    def _morning_preset_changed(self,value):
+        if value:self.morning_controls["color_a"].setText(value);self.morning_controls_changed()
+    def pick_morning_color(self,key):
+        edit=self.morning_controls[key];color=QColorDialog.getColor(QColor(edit.text()),self)
+        if color.isValid():edit.setText(color.name().upper());self.morning_controls_changed()
+    def morning_controls_changed(self,*_):
+        if self._syncing:return
+        if self.template.get("renderer_family")!="morning_shape":self.template=load_template(resource_path("templates/60_morning_halo.json"))
+        c=self.morning_controls;settings=self.template.setdefault("morning_shape",{})
+        def valid_color(key,default):
+            value=c[key].text().strip().upper();return value if len(value)==7 and value.startswith("#") and all(ch in "0123456789ABCDEF" for ch in value[1:]) else default
+        settings.update({"shape_id":c["shape_id"].currentData(),"shape_size":c["shape_size"].value()/100,"position_x":c["position_x"].value()/100,"position_y":c["position_y"].value()/100,"movement":c["movement"].currentData(),"response_strength":c["response_strength"].value(),"color_mode":c["color_mode"].currentData(),"color_a":valid_color("color_a","#FFF8EC"),"color_b":valid_color("color_b","#FFCDB6"),"opacity":c["opacity"].value()/100,"stroke_style":c["stroke_style"].currentData(),"glow_level":c["glow_level"].currentData(),"local_adapt":c["local_adapt"].isChecked()});self.debounce.start()
     def _tokyo_signature_tab(self):
         widget=QWidget();form=QFormLayout(widget);self.signature_controls={}
         options=(("Signature",[("그와 그녀의 STORY · Tokyo Two Hearts","TWO_HEARTS"),("그의 STORY · Tokyo Midnight Pulse","MIDNIGHT_PULSE"),("그녀의 STORY · Tokyo Silk Wave","SILK_WAVE")]),("움직임 강도",[("잔잔하게","CALM"),("기본","STANDARD"),("역동적","DYNAMIC"),("매우 역동적","VERY_DYNAMIC")]),("위치",[("위","TOP"),("중앙","CENTER"),("아래","BOTTOM")]),("가로 위치",[("왼쪽","LEFT"),("중앙","CENTER"),("오른쪽","RIGHT")]),("파형 존재감",[("부드럽게","SOFT"),("기본","DEFAULT"),("선명하게","CRISP")]))
@@ -389,6 +426,7 @@ class MainWindow(QMainWindow):
         for path,data in getattr(self,"template_entries",[]):
             category=str(data.get("category","")).lower(); ident=str(data.get("id",path.stem))
             if mode=="Tokyo Chill Signature" and category!="tokyo_chill_signature_v1": continue
+            if mode=="Morning Chill Shapes" and category!="morning_chill_shapes": continue
             if mode=="CHILL RAP SIGNATURE" and (category!="chill_rap_signature" or not data.get("signature_category")): continue
             if mode=="Signature Experimental / v2" and category!="signature_experimental_v2": continue
             if mode=="Signature Experimental / v3" and category!="signature_experimental_v3": continue
@@ -408,11 +446,15 @@ class MainWindow(QMainWindow):
         name,ok=QInputDialog.getText(self,"Save Template","Template name")
         if ok and name.strip():self.template["name"]=name.strip();safe="".join(c if c.isalnum() or c in "-_" else "_" for c in name.strip());save_template(user_templates_dir()/(safe+".json"),self.template);self.refresh_templates();self.status.setText("Saved to My Templates")
     def _current_waveform_data(self,name="Current Waveform"):
+        if self.template.get("renderer_family")=="morning_shape":
+            settings=copy.deepcopy(self.template.get("morning_shape",{}));return new_waveform(name,renderer_family="morning_shape",theme="WARM",intensity="CALM",width="STANDARD",position="CENTER",color_mode="CUSTOM",colors=[settings.get("color_a","#FFF8EC"),settings.get("color_b","#FFCDB6")],auto_adapt=True,local_adapt=bool(settings.get("local_adapt",True)),advanced={},morning_shape=settings)
         if self.template.get("renderer_family")=="tokyo_signature":
             settings=copy.deepcopy(self.template.get("tokyo_signature",{}));return new_waveform(name,renderer_family="tokyo_signature",theme="NEON",intensity="STANDARD",width="STANDARD",position=str(settings.get("horizontal_position","LEFT")).upper(),color_mode="THEME",colors=[],auto_adapt=bool(settings.get("auto_adapt",True)),local_adapt=bool(settings.get("local_adapt",True)),advanced={},signature=settings)
         settings=copy.deepcopy(self.template.get("universal_visualizer",{}));colors=[button.text() for button in self.uv_color_buttons]
         return new_waveform(name,renderer_family="soft_round_led",theme=str(settings.get("theme","NEON")).upper(),intensity=str(settings.get("intensity","STANDARD")).upper(),width=str(settings.get("width","STANDARD")).upper(),position=str(settings.get("position","LEFT")).upper(),color_mode=str(settings.get("color_mode","THEME")).upper(),colors=colors if str(settings.get("color_mode","THEME")).upper()=="CUSTOM" else [],auto_adapt=bool(settings.get("auto_adapt",True)),local_adapt=bool(settings.get("local_adapt",True)),advanced=copy.deepcopy(settings.get("advanced",{})))
     def _apply_waveform_data(self,data):
+        if data["renderer_family"]=="morning_shape":
+            base=load_template(resource_path("templates/60_morning_halo.json"));base["name"]=data["name"];base["morning_shape"].update(copy.deepcopy(data["morning_shape"]));self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2);return
         if data["renderer_family"]=="tokyo_signature":
             variant=data["signature"]["variant"];files={"TWO_HEARTS":"00_v0850_tokyo_two_hearts.json","MIDNIGHT_PULSE":"00_v0850_tokyo_midnight_pulse.json","SILK_WAVE":"00_v0850_tokyo_silk_wave.json"};base=load_template(resource_path("templates")/files[variant]);base["name"]=data["name"];base["tokyo_signature"].update(copy.deepcopy(data["signature"]));self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2);return
         base=load_template(resource_path("templates/00_universal_soft_round_led.json"));base["name"]=data["name"];base["renderer_family"]=data["renderer_family"];base["universal_visualizer"]={key:copy.deepcopy(data[key]) for key in ("theme","intensity","width","position","color_mode","colors","auto_adapt","local_adapt","advanced")};self.template=base;self.sync_controls();self.debounce.start();self.navigate_step(2)
@@ -498,6 +540,11 @@ class MainWindow(QMainWindow):
                 value=str(settings.get(key,""));index=self.signature_controls[label].findData(value)
                 if index>=0:self.signature_controls[label].setCurrentIndex(index)
             self.signature_controls["파형 크기"].setValue(round(float(settings.get("size",1))*100));self.signature_controls["Local Background Adapt"].setChecked(bool(settings.get("local_adapt",True)))
+        if hasattr(self,"morning_controls") and self.template.get("renderer_family")=="morning_shape":
+            settings=self.template.get("morning_shape",{});c=self.morning_controls
+            index=c["shape_id"].findData(str(settings.get("shape_id","MORNING_HALO")).upper());c["shape_id"].setCurrentIndex(max(0,index));c["shape_size"].setValue(round(float(settings.get("shape_size",1))*100));c["position_x"].setValue(round(float(settings.get("position_x",.5))*100));c["position_y"].setValue(round(float(settings.get("position_y",.5))*100));c["response_strength"].setValue(float(settings.get("response_strength",1)));c["opacity"].setValue(round(float(settings.get("opacity",.88))*100));c["color_a"].setText(str(settings.get("color_a","#FFF8EC")));c["color_b"].setText(str(settings.get("color_b","#FFCDB6")));c["local_adapt"].setChecked(bool(settings.get("local_adapt",True)))
+            for key,default in (("movement","CALM"),("color_mode","SOLID"),("stroke_style","THIN"),("glow_level","SUBTLE")):
+                index=c[key].findData(str(settings.get(key,default)).upper());c[key].setCurrentIndex(max(0,index))
         self._syncing=False
     def controls_changed(self,*_):
         if self._syncing:return

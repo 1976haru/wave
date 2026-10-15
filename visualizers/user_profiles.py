@@ -23,7 +23,7 @@ def safe_filename(name: str) -> str:
 class UserWaveformStore:
     def __init__(self, directory: str | Path | None = None, installed_families: set[str] | None = None):
         self.directory = Path(directory) if directory else default_waveform_dir()
-        self.installed_families = installed_families or {"soft_round_led"}
+        self.installed_families = installed_families or {"soft_round_led", "tokyo_signature", "morning_shape"}
         if directory is None:self._migrate_legacy()
 
     def _migrate_legacy(self):
